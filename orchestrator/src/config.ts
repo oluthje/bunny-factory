@@ -24,6 +24,11 @@ export const config = {
   /** How long Claude may run before the factory gives up. */
   claudeTimeoutMinutes: Number(process.env.CLAUDE_TIMEOUT_MINUTES ?? 60),
   pollSeconds: 30,
+  /**
+   * The most runs in flight at once, across all tickets. Each runner takes the snapshot's 4 vCPU and
+   * 8 GiB, so Daytona's tier 2 allows about 25; the shared Claude subscription's rate limits bind first.
+   */
+  maxRuns: Number(process.env.FACTORY_MAX_RUNS ?? 3),
 
   ghToken: () => required("GH_TOKEN"),
   linearApiKey: () => required("LINEAR_API_KEY"),

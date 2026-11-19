@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { GITHUB_MARKER } from "../src/logic.ts";
-import { parseThreadReplies, replyBody, replyRetryPrompt, threadRepliesJsonSchema } from "../src/replies.ts";
+import { GITHUB_MARKER } from "../../src/logic.ts";
+import { parseThreadReplies, replyBody, replyRetryPrompt, threadRepliesJsonSchema } from "./replies.ts";
 
 const handles = ["T1", "T2"] as const;
 const result = (structured_output: unknown) => JSON.stringify({ type: "result", subtype: "success", structured_output });

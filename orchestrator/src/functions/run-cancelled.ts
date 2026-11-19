@@ -22,7 +22,7 @@ export const runCancelled = inngest.createFunction(
     await step.run("report", async () => {
       updateRun(runId, { status: "cancelled", finishedAt: new Date().toISOString() });
       await comment(ticket.id, linearComment("The run was stopped before it finished.", runId));
-      await applyLabels(ticket.id, finished({ task, status: "cancelled", pushed: false }));
+      await applyLabels(ticket.id, finished(task, { status: "cancelled", next: null }));
     });
   },
 );

@@ -1,49 +1,44 @@
 // The ticket's factory labels are its state, and this is the one place that changes them.
 // Pure: it says which labels change; linear.ts applies the change. Unit-tested in test/transitions.test.ts.
 //
-//   oscar-factory:<task>        queued: the poller starts a run of <task>
+//   oscar-factory:<task>                               queued: the poller starts a run of <task>
 //        │ picked up
 //        ▼
-//   oscar-factory:in-progress   a run is queued or working
-//        │ finished
-//        ├─ CHAIN names a next task ──▶ oscar-factory:<next>   (queued again)
-//        └─ otherwise ───────────────▶ oscar-factory:human-needed
+//   oscar-factory:<task> + oscar-factory:in-progress   a run of <task> is queued or working
+//        │ finished: both labels off, then
+//        ├─ succeeded, and the task names a next one ──▶ oscar-factory:<next>   (queued again)
+//        └─ otherwise ─────────────────────────────────▶ oscar-factory:human-needed
 //
+// The task label stays on through the run so Linear shows which stage the ticket is in; the poller
+// doesn't start a second run meanwhile because it skips tickets with a run in flight.
+//
+// Each task decides what it hands off to, in its `conclude` (tasks/<task>/index.ts); this file
+// only applies the rule every task shares: a run that didn't succeed always stops for a human.
 // Oscar moves the ticket on from human-needed by adding a task label. Every hand-off between
 // tasks goes through the labels, so the poller is the only thing that starts runs.
-import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, taskLabel, type TaskName } from "./tasks.ts";
+import type { TaskName } from "../tasks/index.ts";
+import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, taskLabel } from "./labels.ts";
 
 export type LabelChange = { add: string[]; remove: string[] };
 
-/** How a run ended, as the chain sees it. */
+/** How a run ended, as the labels see it. */
 export type RunEnd = {
-  task: TaskName;
   status: "succeeded" | "no_changes" | "failed" | "timed_out" | "cancelled";
-  /** The run pushed new commits to the ticket's branch. */
-  pushed: boolean;
+  /** The task the run asks to hand off to, or null for "wait for Oscar". */
+  next: TaskName | null;
 };
 
-/**
- * What each task hands off to when it ends, or null for "wait for Oscar". Only a run that
- * succeeded is chained: a failed, timed-out or cancelled run always stops for a human.
- */
-const CHAIN: { [T in TaskName]: (end: RunEnd & { task: T }) => TaskName | null } = {
-  // New commits always get a review, whether they opened the PR or updated it.
-  implement: (end) => (end.pushed ? "review" : null),
-  review: () => null,
-};
-
+/** A run that ended any way but `succeeded` stops for a human, whatever it asked for. */
 export function nextTask(end: RunEnd): TaskName | null {
-  if (end.status !== "succeeded") return null;
-  return (CHAIN[end.task] as (end: RunEnd) => TaskName | null)(end);
+  return end.status === "succeeded" ? end.next : null;
 }
 
 /** The most runs of one task a ticket gets; past it, Oscar has to step in. */
 export const LOOP_CAP = 5;
 
-/** The poller takes the ticket: its task label off, so adding it again asks for another run. */
-export function pickedUp(task: TaskName): LabelChange {
-  return { add: [IN_PROGRESS_LABEL], remove: [taskLabel(task), HUMAN_NEEDED_LABEL] };
+/** The poller takes the ticket: in-progress on, the task label left on to show the stage. */
+export function pickedUp(): LabelChange {
+  return { add: [IN_PROGRESS_LABEL], remove: [HUMAN_NEEDED_LABEL] };
 }
 
 /** The poller won't start the task: the loop cap is reached. */
@@ -51,8 +46,12 @@ export function refused(task: TaskName): LabelChange {
   return { add: [HUMAN_NEEDED_LABEL], remove: [taskLabel(task)] };
 }
 
-/** A run ended: queue the next task in the chain, or wait for Oscar. */
-export function finished(end: RunEnd): LabelChange {
+/**
+ * A run of `task` ended: its labels off, then queue the next task or wait for Oscar. A hand-off to
+ * the same task keeps its label, so the ticket is queued again.
+ */
+export function finished(task: TaskName, end: RunEnd): LabelChange {
   const next = nextTask(end);
-  return { add: [next ? taskLabel(next) : HUMAN_NEEDED_LABEL], remove: [IN_PROGRESS_LABEL] };
+  const remove = next === task ? [IN_PROGRESS_LABEL] : [IN_PROGRESS_LABEL, taskLabel(task)];
+  return { add: [next ? taskLabel(next) : HUMAN_NEEDED_LABEL], remove };
 }

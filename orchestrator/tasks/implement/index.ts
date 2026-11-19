@@ -1,16 +1,38 @@
 // `implement` creates or updates: with no branch on GitHub it branches from main and opens draft PRs;
 // with one, it builds on the branch with Oscar's feedback and replies on Oscar's review threads.
-import { config } from "../config.ts";
-import { lastFinishedAt } from "../db/index.ts";
-import { publishEvidence } from "../evidence.ts";
-import { renderFeedback } from "../feedback.ts";
-import { openOrFindPr, prComments, replyToThread, reviewThreads, setPrBody, viewerLogin } from "../github.ts";
-import { ticketComments } from "../linear.ts";
-import { linkEvidence, prBody, prTitle } from "../logic.ts";
-import { parseThreadReplies, replyBody, replyRetryPrompt, threadRepliesJsonSchema } from "../replies.ts";
-import { finish, plural, PR_BODY, prRef, type TaskRun } from "./shared.ts";
+// It reviews and fixes its own work with `code-review`, and ends with commits and a PR body.
+// The tree of its prompt is in tasks/README.md.
+import { config } from "../../src/config.ts";
+import { lastFinishedAt } from "../../src/db/index.ts";
+import { publishEvidence } from "../../src/evidence.ts";
+import { openOrFindPr, prComments, replyToThread, reviewThreads, setPrBody, viewerLogin } from "../../src/github.ts";
+import { ticketComments } from "../../src/linear.ts";
+import { linkEvidence } from "../../src/logic.ts";
+import { finish, plural, prRef, type Outcome, type Prepared, type RunContext, type Task } from "../../src/task.ts";
+import { renderFeedback } from "./feedback.ts";
+import { prBody, prTitle } from "./pr.ts";
+import { PR_BODY, promptVars, renderThread } from "./prompt.ts";
+import { parseThreadReplies, replyBody, replyRetryPrompt, threadRepliesJsonSchema } from "./replies.ts";
 
-export const implement: TaskRun = async ({ step, runId, ticket, branch, localDir, timeLimitMinutes, heads, openPrs }) => {
+export const implement: Task = {
+  skills: [
+    "oscar-factory-rules",
+    "oscar-factory-stack",
+    "oscar-factory-evidence",
+    "implement",
+    "tdd", // called by implement
+    "codebase-design", // called by tdd
+    "code-review",
+    "pr",
+  ],
+  browser: true,
+  branch: "optional",
+  timeLimitMinutes: null,
+  delivers: "the PR",
+  prepare,
+};
+
+async function prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {
   const openUrls = Object.values(openPrs);
 
   // An update's feedback, acted on with the ticket still the spec: Oscar's review threads waiting
@@ -29,23 +51,25 @@ export const implement: TaskRun = async ({ step, runId, ticket, branch, localDir
     : null;
   const handles = Object.keys(feedback?.handles ?? {}) as [string, ...string[]];
 
+  // A create's context: Oscar's ticket comments, and the latest explore findings if the ticket was
+  // explored. An update's feedback already has the ticket comments, and skips the factory's own.
+  // The step keeps its old id: its return is still a string (coding standards, rule 9).
+  const thread = updating ? "" : await step.run("gather-findings", async () => renderThread(await ticketComments(ticket.id)));
+
   return {
-    prompt: { update: feedback ? { feedback: feedback.markdown } : null, prBody: null },
+    vars: promptVars({ feedback: feedback?.markdown ?? null, thread }),
     outputs: { prBody: PR_BODY },
     // One reply per review thread the update was given.
     pass:
       handles.length > 0
         ? {
             schema: threadRepliesJsonSchema(handles),
-            validate: (text, stderr) => {
-              const parsed = parseThreadReplies(text, handles, stderr);
-              return parsed.ok ? null : parsed.error;
-            },
+            parse: (text: string, stderr: string) => parseThreadReplies(text, handles, stderr),
             retryPrompt: replyRetryPrompt,
           }
         : null,
 
-    conclude: async ({ files, structured, passError, timedOut, pushed, commits }) => {
+    conclude: async ({ files, structured, passError, timedOut, pushed, commits }: Outcome) => {
       // Evidence to Linear: inline on the ticket, linked from the PR (GitHub can't show it inline).
       const evidence = await step.run("publish-evidence", () => publishEvidence(localDir, files.prBody!));
       const agentBody = linkEvidence(files.prBody!, evidence.urls);
@@ -95,9 +119,10 @@ export const implement: TaskRun = async ({ step, runId, ticket, branch, localDir
           prUrls.length > 0 ? null : agentBody.trim(),
           evidence.linearMarkdown,
         ].filter((l): l is string => Boolean(l));
-        await finish(runId, ticket.id, { task: "implement", status, pushed: pushed.length > 0 }, lines.join("\n\n"), { prUrls });
+        // New commits always get a review, whether they opened the PR or updated it.
+        await finish({ runId, ticketId: ticket.id, end: { status, next: pushed.length > 0 ? "review" : null }, text: lines.join("\n\n"), record: { prUrls } });
       });
       return { status, prUrls };
     },
   };
-};
+}

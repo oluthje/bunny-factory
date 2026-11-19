@@ -6,8 +6,10 @@ import {
   parseVerdict,
   placeComments,
   reviewCommentsJsonSchema,
+  reviewComment,
   verdictLine,
-} from "../src/review.ts";
+} from "./review.ts";
+import { ticket } from "../../test/fixtures.ts";
 
 const review = (standards: string, spec: string) =>
   `## Standards: ${standards}\n\nFine.\n\n## Spec: ${spec}\n\nFine.\n\n## Rules this review wanted and could not find\n\nNone.\n`;
@@ -153,5 +155,15 @@ describe("extractionRetryPrompt", () => {
     expect(prompt).toContain("✖ Invalid option");
     expect(prompt).toContain("same structure");
     expect(prompt).toContain("no tool calls");
+  });
+});
+
+describe("reviewComment", () => {
+  it("frames the review with the ticket and run, and says it is comment only", () => {
+    const body = reviewComment(ticket(), "## Standards\n\nFine.\n", "run-1");
+    expect(body).toContain("[REC-123](https://linear.app/bunnyinc/issue/REC-123)");
+    expect(body).toContain("## Standards\n\nFine.");
+    expect(body).toContain("run `run-1`");
+    expect(body).toContain("no approval or change request");
   });
 });

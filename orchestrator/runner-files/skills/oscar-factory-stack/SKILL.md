@@ -7,6 +7,14 @@ description: Reference for the Bunny stack in a factory run: repos, services, sp
 
 The Bunny repos are in `~/bunny`: `api` (Rails), `app` and `portal` (Vite), and `kong`. Each has its own `CLAUDE.md` / `AGENTS.md`; read it before changing that repo.
 
+`components`, `docs` and `docs-developer` are there too, checked out like the others, but nothing is installed or running for them:
+
+- `components` is the `@bunnyapp/components` package. `app` and `portal` install it from npm, so a change here doesn't reach the running stack. To run its checks, `npm ci` there first.
+- `docs` is the public docs site (Jekyll, with Tailwind through npm). Its gems and `node_modules` aren't installed.
+- `docs-developer` is the developer docs, in GitBook markdown. There's nothing to build.
+
+Set one up only when the ticket needs it.
+
 ## Stack
 
 Every service is already running natively (no Docker): Rails, Solid Queue, both Vite servers, Postgres, Redis, maildev and Caddy.
@@ -30,9 +38,9 @@ bunny-stack run api bin/rails runner 'puts Users::GenerateLoginLink.call(user: U
 
 ## Known gaps
 
-These fail because of the sandbox, not because of your change:
+These fail because of the runner, not because of your change:
 
 - The login, widget, metabase and admin routes return 502: those services aren't in the stack.
 - PDF rendering fails: PrinceXML isn't installed.
-- Third-party APIs are unreachable: the sandbox's network is restricted.
+- Third-party APIs are unreachable: the runner's network is restricted.
 - There is no GitHub or Linear access.

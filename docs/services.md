@@ -10,7 +10,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 | ---------------------- | -------------------------------------------------------------------------------------------------- |
 | Ticket tracker         | Linear, workspace `bunnyinc`, team `REC`                                                           |
 | Ticket source          | Deferred. Oscar adding an `oscar-factory:<task>` label is the only source for now                         |
-| Git host               | GitHub, `bunnyapp/{api,app,portal,kong}`                                                           |
+| Git host               | GitHub, `bunnyapp/{api,app,portal,kong,components,docs,docs-developer}`                            |
 | Orchestrator           | Inngest Cloud. Function code on Fly.io: one Node service, one machine. State in SQLite on a Fly volume, via Drizzle |
 | Runner                 | Daytona: a native, no-Docker warm snapshot built from `runner/` in this repo. One ephemeral sandbox per run |
 | Harness                | Headless Claude Code (`claude -p`) with Playwright MCP                                             |
@@ -24,7 +24,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 4. **The runner runs the Bunny stack without Docker.** Each service runs natively: Rails, Solid Queue, Vite ×2, Postgres 18, Redis, maildev, and Caddy in place of Kong. Docker-in-Docker costs at least 2 vCPU / 4 GiB of overhead, starts with a cold image cache, and has cgroup issues.
 5. **Headless Claude Code** reads `CLAUDE.md` and the repo skills, and drives the in-sandbox Chromium via Playwright MCP.
 6. **The model is accessed with your personal Claude subscription token** (`claude setup-token`). It is chosen for cost. Consequences:
-   - runs share your subscription's usage limits, so concurrency is capped at 1–2 runs
+   - runs share your subscription's usage limits, so concurrency is capped low: 3 runs by default (`FACTORY_MAX_RUNS`), well under what Daytona's tier 2 allows (about 25 runners at 4 vCPU / 8 GiB)
    - the token expires, so you need to renew it
    - it must never be baked into the snapshot
 7. **GitHub access uses your existing fine-grained PAT, held only on Fly.**
@@ -37,12 +37,12 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
    - GitHub-triggered runs stay switched off until Linear-triggered runs have earned trust.
 9. **Linear events are polled.** You are not a workspace admin, so you can't add webhooks.
    - An Inngest cron runs every 1–2 minutes on `updatedAt` cursors.
-   - A ticket opts in only when it has an **`oscar-factory:<task>` label** (today only `oscar-factory:implement`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
+   - A ticket opts in only when it has an **`oscar-factory:<task>` label** (`oscar-factory:implement`, `oscar-factory:review` or `oscar-factory:explore`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
    - **The labels are the ticket's state**, and `orchestrator/src/transitions.ts` is the one place that changes them:
-     - **Pickup.** The poller takes the task label off and adds **`oscar-factory:in-progress`**. Adding the task label again asks for another run.
-     - **A run ends.** The factory removes in-progress. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. Today the chain is one step: an `implement` run that pushed commits hands off to `oscar-factory:review`.
+     - **Pickup.** The poller adds **`oscar-factory:in-progress`** and leaves the task label on, so Linear shows which stage each ticket is in. While the run works, the poller doesn't start another on the ticket.
+     - **A run ends.** The factory removes in-progress and the task label. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. The chain: an `explore` run with an easy-call verdict hands off to `oscar-factory:implement`, and an `implement` run that pushed commits hands off to `oscar-factory:review`.
      - **The poller is the only thing that starts runs.** A ticket with a run queued or working waits, and the run's end brings it back.
-     - **One run at a time, held by the poller.** It starts a run only when none is in flight, oldest ticket first; the rest keep their task label and wait in Linear. Inngest's concurrency limit can't do this: it counts only executing steps, and a run's `step.sleep` waits free the slot.
+     - **At most `FACTORY_MAX_RUNS` runs in flight (default 3), held by the poller.** Each poll fills the free slots, oldest ticket first; the rest keep their task label and wait in Linear. A ticket still has one run at a time. Inngest's concurrency limit can't do this: it counts only executing steps, and a run's `step.sleep` waits free the slot. Runs share the orchestrator's git mirrors, so each repo's mirror takes one operation at a time.
      - **Loop cap:** 5 runs of one task per ticket. Past it, the poller refuses the run and the ticket waits on Oscar.
      - The poller ignores in-progress and human-needed when choosing a task.
    - Every factory comment carries a marker, so the pollers skip the factory's own comments.
@@ -79,7 +79,7 @@ A **sweeper cron** collects artifacts from any factory sandbox with no live run,
 ## Warm snapshot
 
 **Contents:**
-- the four repos at a recent `main`
+- the seven repos at a recent `main`. `components`, `docs` and `docs-developer` are only cloned: nothing is installed for them
 - gems, including the private ones
 - `node_modules` for `app` and `portal`
 - all three databases (`bunny_development`, `bunny_events`, `bunny_queue`), migrated and seeded with the CORS whitelist applied

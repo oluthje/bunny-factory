@@ -1,7 +1,8 @@
 // One run of a task on a ticket. Ports runner/sandbox.sh into Inngest steps.
-// This file is what every run shares: bundles in, the sandbox, catch-up, Claude, the structured-output
-// pass, the work out and pushed. What a task adds before the run and does with its work is in
-// runs/<task>.ts; what differs in between (browser, branch, time limit) is its entry in TASKS.
+// This file is what every run shares: bundles in, the Daytona sandbox, catch-up, Claude, the
+// structured-output pass, the work out and pushed. It knows no task by name: everything a task adds
+// (its settings, its inputs before the run, what it does with the work) comes through the `Task`
+// in tasks/<task>/index.ts (see src/task.ts).
 // Every ending applies a transition from transitions.ts to the ticket's labels; that is how one
 // task hands off to the next. Every step is short; the long parts (catch-up, Claude, the
 // structured-output pass) run in background sessions that we poll.
@@ -11,19 +12,14 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.ts";
 import { closeIfOpen, updateRun } from "../db/index.ts";
-import { bundleBase, fetchBranch, importAndPush, refreshMirror } from "../git.ts";
+import { bundleForRun, importAndPush } from "../git.ts";
 import { commitIdentity, findOpenPr } from "../github.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
 import { applyLabels } from "../linear.ts";
 import { parseChangedRepos, sandboxName, shQuote, type Ticket } from "../logic.ts";
 import { buildPrompt, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../prompt.ts";
-import { implement } from "../runs/implement.ts";
-import { review } from "../runs/review.ts";
-import { EVIDENCE_DIR, finish, type Pass, PR_BODY, REVIEW, type TaskRun } from "../runs/shared.ts";
+import { ARTIFACTS, EVIDENCE_DIR, HOME, RUN_DIR } from "../runner-paths.ts";
 import {
-  ARTIFACTS,
-  HOME,
-  RUN_DIR,
   createSandbox,
   deleteSandbox,
   download,
@@ -35,10 +31,8 @@ import {
 } from "../sandbox.ts";
 import { STRUCTURED_RETRIES } from "../structured.ts";
 import { skillsFor, TASKS, type TaskName } from "../tasks.ts";
+import { finish, type Pass } from "../task.ts";
 import { finished } from "../transitions.ts";
-
-/** Each task's part of the run. */
-const TASK_RUNS: Record<TaskName, TaskRun> = { implement, review };
 
 /** The structured-output pass's `claude --output-format json` result. */
 const PASS_OUT = `${ARTIFACTS}/structured-output.json`;
@@ -64,7 +58,7 @@ const runDirFor = (runId: string) => path.join(config.dataDir, "runs", runId);
 
 type RunRequested = { runId: string; ticket: Ticket; task: TaskName };
 
-/** Only the task's skills reach the runner: tar them from sandbox/skills/. */
+/** Only the task's skills reach the runner: tar them from runner-files/skills/. */
 async function packSkills(task: TaskName, outFile: string): Promise<void> {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   await promisify(execFile)("tar", ["czf", outFile, "-C", SKILLS_DIR, ...skillsFor(task)]);
@@ -74,10 +68,10 @@ export const runTicket = inngest.createFunction(
   {
     id: "run-ticket",
     triggers: [{ event: RUN_REQUESTED }],
-    // Not what keeps runs apart: Inngest counts only steps that are executing, and a run spends
-    // most of its life in step.sleep, which frees the slot. The poller starts one run at a time
-    // (poll-linear.ts). This only stops two runs' steps from executing at the same moment.
-    concurrency: { limit: 1 },
+    // Not what caps runs: Inngest counts only steps that are executing, and a run spends most of
+    // its life in step.sleep, which frees the slot. The poller keeps at most `maxRuns` in flight
+    // (poll-linear.ts); this only matches it, so every run's steps can execute.
+    concurrency: { limit: config.maxRuns },
     retries: 2,
     onFailure: async ({ event, step }) => {
       // Backstop: the run's own cleanup normally does this. The record is closed first, or the
@@ -86,7 +80,7 @@ export const runTicket = inngest.createFunction(
       await step.run("delete-leftover-sandbox", () => deleteSandbox(sandboxName(ticket.identifier, runId)));
       await step.run("mark-stopped", async () => {
         closeIfOpen(runId, "failed");
-        await applyLabels(ticket.id, finished({ task, status: "failed", pushed: false }));
+        await applyLabels(ticket.id, finished(task, { status: "failed", next: null }));
       });
     },
   },
@@ -99,16 +93,16 @@ export const runTicket = inngest.createFunction(
     let sandboxId: string | null = null;
 
     try {
-      // 1. Bundles of an up-to-date main, built from the host's mirrors, plus the ticket's branch
-      // from every repo that has it on GitHub.
+      // 1. Bundles of an up-to-date main, built from the orchestrator's mirrors, plus the ticket's branch
+      // from every repo that has it on GitHub, unless the task never touches it.
+      const usesBranch = settings.branch !== "none";
       const { baseShas, heads } = await step.run("bundle-main", async () => {
         const shas: Record<string, string> = {};
         const found: Record<string, string> = {};
         for (const repo of config.repos) {
-          shas[repo] = await refreshMirror(repo);
-          const head = await fetchBranch(repo, branch);
+          const { base, head } = await bundleForRun(repo, path.join(localDir, "in", `${repo}.bundle`), usesBranch ? branch : null);
+          shas[repo] = base;
           if (head) found[repo] = head;
-          await bundleBase(repo, path.join(localDir, "in", `${repo}.bundle`), head ? branch : undefined);
         }
         return { baseShas: shas, heads: found };
       });
@@ -128,7 +122,7 @@ export const runTicket = inngest.createFunction(
       });
 
       // 1b. The task's own inputs, gathered before the sandbox exists.
-      const prepared = await TASK_RUNS[task]({ step, runId, ticket, task, branch, localDir, timeLimitMinutes, heads, openPrs });
+      const prepared = await settings.prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes, heads, openPrs });
       const { pass } = prepared;
 
       // 2. The sandbox. Looked up by name first so a retried step doesn't create a second one.
@@ -142,7 +136,8 @@ export const runTicket = inngest.createFunction(
       const id = sandboxId;
 
       // 3. Bundles, Claude's settings, the task's skills, prompt and MCP config in. Each repo checks the branch out
-      // from its own bundle where it's on GitHub, and from the new main elsewhere.
+      // from its own bundle where it's on GitHub, and from the new main elsewhere. A task that never
+      // touches the branch gets a detached `origin/main`, so a commit has nowhere to go.
       await step.run("upload-and-checkout", async () => {
         const sb = await getSandbox(id);
         for (const repo of config.repos) {
@@ -152,15 +147,7 @@ export const runTicket = inngest.createFunction(
         await packSkills(task, skillsTgz);
         await upload(sb, skillsTgz, `${RUN_DIR}/skills.tgz`);
         await upload(sb, SETTINGS_FILE, `${HOME}/.claude/settings.json`);
-        const prompt = buildPrompt({
-          task,
-          ticket,
-          evidenceDir: EVIDENCE_DIR,
-          prBodyPath: PR_BODY,
-          reviewPath: REVIEW,
-          timeLimitMinutes,
-          ...prepared.prompt,
-        });
+        const prompt = buildPrompt({ task, ticket, timeLimitMinutes, vars: prepared.vars });
         fs.writeFileSync(path.join(localDir, "prompt.md"), prompt);
         await upload(sb, Buffer.from(prompt), `${RUN_DIR}/prompt.md`);
         if (settings.browser) await upload(sb, Buffer.from(JSON.stringify(MCP_CONFIG)), `${RUN_DIR}/mcp.json`);
@@ -183,7 +170,7 @@ export const runTicket = inngest.createFunction(
                git fetch -q --no-tags ${RUN_DIR}/in/$r.bundle +refs/heads/${shQuote(branch)}:refs/remotes/origin/${shQuote(branch)}
                start=origin/${shQuote(branch)}
              fi
-             git checkout -q -f -B ${shQuote(branch)} "$start"
+             ${usesBranch ? `git checkout -q -f -B ${shQuote(branch)} "$start"` : `git checkout -q -f --detach "$start"`}
              git config user.name ${shQuote(who.name)}
              git config user.email ${shQuote(who.email)}
            done`,
@@ -246,7 +233,7 @@ export const runTicket = inngest.createFunction(
       // checks against the schema. The orchestrator checks it again with the same zod schema; on
       // failure it resumes again with the error, up to STRUCTURED_RETRIES times. The orchestrator,
       // not the agent, posts the result. Returns the last error, or null when the output is good.
-      const structuredPass = async ({ validate, retryPrompt }: Pass): Promise<string | null> => {
+      const structuredPass = async ({ parse, retryPrompt }: Pass): Promise<string | null> => {
         let lastError: string | null = null;
         for (let attempt = 0; attempt <= STRUCTURED_RETRIES; attempt++) {
           const promptFile = attempt === 0 ? `${RUN_DIR}/extract.md` : `${RUN_DIR}/extract-retry-${attempt}.md`;
@@ -283,7 +270,8 @@ export const runTicket = inngest.createFunction(
             const sb = await getSandbox(id);
             const text = await sb.fs.downloadFile(PASS_OUT).catch(() => Buffer.from(""));
             const stderr = await sb.fs.downloadFile(`${ARTIFACTS}/extract-${attempt}.stderr`).catch(() => Buffer.from(""));
-            return validate(text.toString("utf8"), stderr.toString("utf8"));
+            const parsed = parse(text.toString("utf8"), stderr.toString("utf8"));
+            return parsed.ok ? null : parsed.error;
           });
           if (lastError === null) return null;
         }
@@ -301,7 +289,8 @@ export const runTicket = inngest.createFunction(
       const passError = runPass ? await structuredPass(pass) : null;
 
       // 7. Artifacts out, the task's files, plus a bundle per repo with new commits: since the
-      // branch's head on GitHub, or since main where it isn't there yet. Happens on success, failure and timeout.
+      // branch's head on GitHub, or since main where it isn't there yet; none for a task that never
+      // touches the branch. Happens on success, failure and timeout.
       const changed = await step.run("collect", async () => {
         const sb = await getSandbox(id);
         const out = await sh(
@@ -312,7 +301,7 @@ export const runTicket = inngest.createFunction(
              git status --short > ${ARTIFACTS}/git-status-$r.txt
              start=origin/${config.baseBranch}
              git rev-parse -q --verify refs/remotes/origin/${shQuote(branch)} >/dev/null && start=origin/${shQuote(branch)}
-             n=$(git rev-list --count "$start"..${shQuote(branch)})
+             n=${usesBranch ? `$(git rev-list --count "$start"..${shQuote(branch)})` : "0"}
              [ "$n" -gt 0 ] && git bundle create -q ${RUN_DIR}/out/$r.bundle origin/${config.baseBranch}..${shQuote(branch)} 2>/dev/null
              echo "$r $n"
            done
@@ -368,8 +357,12 @@ export const runTicket = inngest.createFunction(
       const stuck = sandboxId;
       if (stuck) await step.run("delete-sandbox-after-failure", () => deleteSandbox(stuck));
       await step.run("report-failure", () =>
-        finish(runId, ticket.id, { task, status: "failed", pushed: false }, `The run failed:\n\n\`\`\`\n${message.slice(0, 1500)}\n\`\`\``, {
-          error: message,
+        finish({
+          runId,
+          ticketId: ticket.id,
+          end: { status: "failed", next: null },
+          text: `The run failed:\n\n\`\`\`\n${message.slice(0, 1500)}\n\`\`\``,
+          record: { error: message },
         }),
       );
       throw err;

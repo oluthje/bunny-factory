@@ -1,19 +1,33 @@
-// `review` fixes what it's sure of, pushes that, posts the rest as a GitHub review and marks the PRs ready.
-import { branchDiff } from "../git.ts";
-import { getPrBody, markReady, postReview } from "../github.ts";
-import { markForGithub, reviewComment } from "../logic.ts";
+// `review` checks out the ticket's branch, fixes what it's sure of and commits that, and ends with a
+// review file; the factory pushes the fixes, posts the rest as a GitHub review and marks the PRs
+// ready. It runs specs, so it gets `oscar-factory-stack`, but no browser or evidence. Then the
+// ticket waits on Oscar. The tree of its prompt is in tasks/README.md.
+import { branchDiff } from "../../src/git.ts";
+import { getPrBody, markReady, postReview } from "../../src/github.ts";
+import { markForGithub } from "../../src/logic.ts";
+import { finish, passResult, plural, prRef, type Outcome, type Prepared, type RunContext, type Task } from "../../src/task.ts";
+import { promptVars, REVIEW } from "./prompt.ts";
 import {
   diffLines,
   extractionRetryPrompt,
   parseReviewComments,
   parseVerdict,
   placeComments,
+  reviewComment,
   reviewCommentsJsonSchema,
   verdictLine,
-} from "../review.ts";
-import { finish, plural, prRef, REVIEW, type TaskRun } from "./shared.ts";
+} from "./review.ts";
 
-export const review: TaskRun = async ({ step, runId, ticket, branch, timeLimitMinutes, heads, openPrs }) => {
+export const review: Task = {
+  skills: ["oscar-factory-rules", "oscar-factory-stack", "code-review"],
+  browser: false,
+  branch: "required",
+  timeLimitMinutes: null,
+  delivers: "the review",
+  prepare,
+};
+
+async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {
   // The task's `branch: "required"` means at least one repo has it.
   const repos = Object.keys(heads) as [string, ...string[]];
   const openUrls = Object.values(openPrs);
@@ -23,15 +37,12 @@ export const review: TaskRun = async ({ step, runId, ticket, branch, timeLimitMi
   const reviewedPrBody = openUrls.length > 0 ? await step.run("fetch-pr-body", () => getPrBody(openUrls[0]!)) : null;
 
   return {
-    prompt: { update: null, prBody: reviewedPrBody },
+    vars: promptVars(reviewedPrBody),
     outputs: { review: REVIEW },
     // The findings it left that point at a line, for inline comments.
     pass: {
       schema: reviewCommentsJsonSchema(repos),
-      validate: (text, stderr) => {
-        const parsed = parseReviewComments(text, repos, stderr);
-        return parsed.ok ? null : parsed.error;
-      },
+      parse: (text, stderr) => parseReviewComments(text, repos, stderr),
       retryPrompt: extractionRetryPrompt,
       needs: REVIEW,
     },
@@ -39,15 +50,10 @@ export const review: TaskRun = async ({ step, runId, ticket, branch, timeLimitMi
     // One GitHub review per open PR, with the review as its body and the findings it left on their
     // lines; the PRs marked ready; the review in full on the ticket. Code reads the verdict; a
     // review without one is still posted for a human, but the run fails.
-    conclude: async ({ files, structured, passError, timedOut, pushed, newHeads, commits }) => {
+    conclude: async ({ files, structured, passError, timedOut, newHeads, commits }: Outcome) => {
       const text = files.review!.trim();
       const verdict = text ? parseVerdict(text) : null;
-      // The last attempt's error says more than a re-parse of its output would.
-      const extracted = !text
-        ? ({ ok: true, comments: [] } as const)
-        : passError
-          ? ({ ok: false, error: passError } as const)
-          : parseReviewComments(structured, repos);
+      const extracted = !text ? ({ ok: true, comments: [] } as const) : passResult(passError, () => parseReviewComments(structured, repos));
       const posted = await step.run("post-review", async () => {
         const urls: string[] = [];
         let placed = 0;
@@ -88,13 +94,16 @@ export const review: TaskRun = async ({ step, runId, ticket, branch, timeLimitMi
           : timedOut
             ? `Timed out after ${timeLimitMinutes} minutes without writing a review.${fixes}`
             : `Finished without writing a review.${fixes}`;
-        await finish(runId, ticket.id, { task: "review", status, pushed: pushed.length > 0 }, report, {
-          prUrls: posted.urls,
-          reviewVerdict: verdict,
-          ...(errors.length ? { error: errors.join(" ") } : {}),
+        // The chain ends here: a reviewed PR waits on Oscar.
+        await finish({
+          runId,
+          ticketId: ticket.id,
+          end: { status, next: null },
+          text: report,
+          record: { prUrls: posted.urls, reviewVerdict: verdict, ...(errors.length ? { error: errors.join(" ") } : {}) },
         });
       });
       return { status, prUrls: posted.urls };
     },
   };
-};
+}

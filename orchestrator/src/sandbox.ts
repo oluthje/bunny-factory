@@ -7,10 +7,6 @@ import { asDaytona } from "./logic.ts";
 let client: Daytona | undefined;
 const daytona = () => (client ??= new Daytona({ apiKey: config.daytonaApiKey() }));
 
-export const HOME = "/home/daytona";
-export const RUN_DIR = `${HOME}/run`;
-export const ARTIFACTS = `${HOME}/artifacts`;
-
 export async function createSandbox(name: string, runId: string): Promise<string> {
   const sb = await daytona().create(
     {

@@ -35,9 +35,9 @@ export function ticketRunInFlight(ticketId: string): boolean {
   );
 }
 
-/** A run on any ticket is queued or working. The factory has one run at a time: see poll-linear.ts. */
-export function anyRunInFlight(): boolean {
-  return db.select({ id: runs.id }).from(runs).where(inArray(runs.status, ["requested", "running"])).get() !== undefined;
+/** How many runs, on any ticket, are queued or working. The poller keeps it at most `config.maxRuns`. */
+export function runsInFlight(): number {
+  return db.select({ n: count() }).from(runs).where(inArray(runs.status, ["requested", "running"])).get()?.n ?? 0;
 }
 
 /** How many runs of the task the ticket has had, for the loop cap. */
@@ -52,6 +52,13 @@ export function lastFinishedAt(ticketId: string, exceptRunId: string): string | 
       .where(and(eq(runs.ticketId, ticketId), ne(runs.id, exceptRunId), isNotNull(runs.finishedAt)))
       .get()?.at ?? null
   );
+}
+
+/** The task a run is of, as recorded when the poller started it. */
+export function runTask(id: string): string {
+  const row = db.select({ task: runs.task }).from(runs).where(eq(runs.id, id)).get();
+  if (!row) throw new Error(`No run ${id}`);
+  return row.task;
 }
 
 /** A new run in `requested`, before its event is sent. Returns its id. */

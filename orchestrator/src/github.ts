@@ -1,5 +1,5 @@
 import { config } from "./config.ts";
-import type { PrComment, ReviewThread } from "./feedback.ts";
+import type { PrComment, ReviewThread } from "./comments.ts";
 
 async function gh<T>(method: string, pathname: string, body?: unknown): Promise<T> {
   const res = await fetch(`https://api.github.com${pathname}`, {

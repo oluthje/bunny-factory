@@ -6,9 +6,13 @@ A software factory for Bunny: agents that turn tickets, PRs and schedules into m
 
 Read [docs/glossary.md](docs/glossary.md) before writing code, docs, tickets or PRs. Use its terms (task, trigger, run, runner, ticket tracker, git host, orchestrator, …) and avoid the words it lists under _Avoid_.
 
+## Coding standards
+
+Read [docs/coding-standards.md](docs/coding-standards.md) before writing orchestrator code. In short: everything one task owns lives in `orchestrator/tasks/<task>/`, `src/` knows no task by name, and step ids and step return shapes are a contract with in-flight runs.
+
 ## Task prompts and skills
 
-Each task's prompt, `orchestrator/sandbox/tasks/<task>/prompt.md`, is its run's one entry point: it lists every skill the run uses, in order. [orchestrator/sandbox/README.md](orchestrator/sandbox/README.md) has the tree for each task.
+Each task's prompt, `orchestrator/tasks/<task>/prompt.md`, is its run's one entry point: it lists every skill the run uses, in order. [orchestrator/tasks/README.md](orchestrator/tasks/README.md) has the tree for each task; [orchestrator/runner-files/README.md](orchestrator/runner-files/README.md) has what reaches the runner and the skills table.
 
 - Prompts call a skill with the Skill tool, except a skill marked `disable-model-invocation: true`, which the Skill tool won't load. The prompt tells the agent to read that one by path (`~/.claude/skills/<skill>/SKILL.md`) and says why. Today that's only `implement`.
 - Skills not prefixed `oscar-factory-` are read-only copies from upstream (Matt Pocock's, Dex Horthy's). Never edit them, not even their frontmatter. To change how one behaves in a run, say so in the prompt, at the step that uses it.

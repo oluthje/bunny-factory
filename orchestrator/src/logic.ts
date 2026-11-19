@@ -54,6 +54,28 @@ export function cursorAfterPoll(prev: string | null, issues: Ticket[], waiting: 
   return advanceCursor(prev, waiting ? issues.filter((t) => t.updatedAt < waiting.updatedAt) : issues);
 }
 
+export type RunDecision<T> = { ticket: Ticket; task: T; outcome: "started" | "waiting" | "capped" };
+
+/**
+ * Which runnable tickets start, oldest first: up to `free` start, a ticket past the loop cap
+ * (`capped`) never does and takes no slot, and the rest wait.
+ */
+export function decideRuns<T>(
+  runnable: readonly { ticket: Ticket; task: T }[],
+  free: number,
+  capped: (ticket: Ticket, task: T) => boolean,
+): RunDecision<T>[] {
+  let left = free;
+  return [...runnable]
+    .sort((a, b) => (a.ticket.updatedAt < b.ticket.updatedAt ? -1 : a.ticket.updatedAt > b.ticket.updatedAt ? 1 : 0))
+    .map(({ ticket, task }) => {
+      if (capped(ticket, task)) return { ticket, task, outcome: "capped" as const };
+      if (left <= 0) return { ticket, task, outcome: "waiting" as const };
+      left--;
+      return { ticket, task, outcome: "started" as const };
+    });
+}
+
 export function sandboxName(identifier: string, runId: string): string {
   return `oscar-factory-${identifier}-${runId.slice(0, 8)}`.toLowerCase();
 }
@@ -81,37 +103,24 @@ export function parseChangedRepos(stdout: string): ChangedRepo[] {
     .filter((r) => r.commits > 0);
 }
 
-export function prTitle(t: Ticket): string {
-  return `${t.identifier}: ${t.title}`;
+/**
+ * A factory comment for Linear: the marker, the run it's about if any, a tag naming what the
+ * comment is if it's one the factory reads back (`explore findings`), then the text.
+ */
+export function linearComment(text: string, runId: string | null, tag?: string): string {
+  const head = [COMMENT_MARKER, runId ? `run \`${runId}\`` : null, tag ?? null].filter(Boolean).join(" · ");
+  return `${head}\n\n${text}`;
 }
 
-/** The agent's PR body (from the `pr` skill), framed with the ticket link and run id. */
-export function prBody(t: Ticket, agentBody: string, runId: string): string {
-  return markForGithub([
-    `Implements [${t.identifier}](${t.url}).`,
-    "",
-    agentBody.trim() || "_The agent wrote no PR body._",
-    "",
-    "---",
-    `Opened by Oscar's factory (run \`${runId}\`). Needs a human review before merging.`,
-  ].join("\n"));
+/** Whether a factory comment carries the tag on its marker line. */
+export function hasCommentTag(body: string, tag: string): boolean {
+  const head = body.split("\n", 1)[0]!;
+  return isFactoryComment(body) && head.split(" · ").includes(tag);
 }
 
-/** The agent's review, framed for a PR comment with the ticket link and run id. */
-export function reviewComment(t: Ticket, review: string, runId: string): string {
-  return markForGithub([
-    `Factory review of [${t.identifier}](${t.url}).`,
-    "",
-    review.trim(),
-    "",
-    "---",
-    `Posted by Oscar's factory (run \`${runId}\`). Its fixes are pushed as commits; the rest are comments, with no approval or change request.`,
-  ].join("\n"));
-}
-
-/** A factory comment for Linear: the marker, the run it's about if any, then the text. */
-export function linearComment(text: string, runId: string | null): string {
-  return `${runId ? `${COMMENT_MARKER} · run \`${runId}\`` : COMMENT_MARKER}\n\n${text}`;
+/** A factory comment's text, without its marker line. */
+export function commentText(body: string): string {
+  return isFactoryComment(body) ? body.slice(body.indexOf("\n") + 1).trim() : body.trim();
 }
 
 export function isFactoryComment(body: string): boolean {
@@ -130,6 +139,14 @@ export function evidenceRefs(body: string): EvidenceRef[] {
     if (seen.has(file!)) return [];
     seen.add(file!);
     return [{ alt: alt!, file: file! }];
+  });
+}
+
+/** Evidence images pointed at their uploaded URLs, for Linear, which shows them inline. A file with no URL is marked as not captured. */
+export function inlineEvidence(body: string, urls: Record<string, string>): string {
+  return body.replace(EVIDENCE_IMAGE, (_, alt: string, file: string) => {
+    const url = urls[file];
+    return url ? `![${alt}](${url})` : `${alt} _(not captured)_`;
   });
 }
 

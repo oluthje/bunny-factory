@@ -1,7 +1,8 @@
 // The review's machine-readable parts: the verdict in review.md, and the findings it left as
-// inline comments. Pure: no I/O, so it is unit-tested in test/review.test.ts.
+// inline comments, and the review as the factory posts it. Pure: no I/O, so it is unit-tested in review.test.ts.
 import { z } from "zod/v4";
-import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "./structured.ts";
+import { markForGithub, type Ticket } from "../../src/logic.ts";
+import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "../../src/structured.ts";
 
 export const VERDICTS = ["PASS", "CHANGES REQUESTED"] as const;
 export type AxisVerdict = (typeof VERDICTS)[number];
@@ -129,4 +130,16 @@ export function placeComments(
     (hunks.get(c.path)?.has(c.line) ? placed : dropped).push(c);
   }
   return { placed, dropped };
+}
+
+/** The agent's review, framed for a PR comment with the ticket link and run id. */
+export function reviewComment(t: Ticket, review: string, runId: string): string {
+  return markForGithub([
+    `Factory review of [${t.identifier}](${t.url}).`,
+    "",
+    review.trim(),
+    "",
+    "---",
+    `Posted by Oscar's factory (run \`${runId}\`). Its fixes are pushed as commits; the rest are comments, with no approval or change request.`,
+  ].join("\n"));
 }

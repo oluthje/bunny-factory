@@ -1,21 +1,8 @@
 // Feedback for an `implement` run that updates an existing PR: Oscar's unresolved review threads,
 // PR comments and ticket comments, rendered as what to change this round. The ticket stays the spec.
-// Pure: no I/O, so it is unit-tested in test/feedback.test.ts.
-import { GITHUB_MARKER, isFactoryComment, isFactoryGithubBody } from "./logic.ts";
-
-export type ThreadComment = { author: string; body: string; createdAt: string };
-export type ReviewThread = {
-  /** GitHub's node id, used to reply. */
-  id: string;
-  repo: string;
-  path: string;
-  /** Null when the thread is outdated and GitHub no longer maps it onto the head. */
-  line: number | null;
-  isResolved: boolean;
-  comments: ThreadComment[];
-};
-export type PrComment = { repo: string; author: string; body: string; createdAt: string };
-export type TicketComment = { body: string; createdAt: string; isMe: boolean };
+// Pure: no I/O, so it is unit-tested in feedback.test.ts.
+import { dated, quote, type PrComment, type ReviewThread, type ThreadComment, type TicketComment } from "../../src/comments.ts";
+import { isFactoryComment, isFactoryGithubBody } from "../../src/logic.ts";
 
 /** Oscar has the last word, unresolved: a thread waiting on the factory. */
 export function threadsWaitingOnFactory(threads: readonly ReviewThread[], viewer: string): ReviewThread[] {
@@ -32,15 +19,6 @@ export type Feedback = {
   /** Whether there is anything new: threads, PR comments or ticket comments since the last run. */
   any: boolean;
 };
-
-/** A comment quoted for the prompt, without the factory's hidden marker. */
-const quote = (body: string) =>
-  body
-    .replaceAll(GITHUB_MARKER, "")
-    .trim()
-    .split("\n")
-    .map((l) => `> ${l}`.trimEnd())
-    .join("\n");
 
 const newerThan = (since: string | null) => (c: { createdAt: string }) => since === null || c.createdAt > since;
 
@@ -75,7 +53,6 @@ export function renderFeedback(args: {
   const mine = args.ticketComments.filter((c) => c.isMe && !isFactoryComment(c.body));
   const fresh = mine.filter(newerThan(since));
   const earlier = mine.filter((c) => !newerThan(since)(c));
-  const dated = (c: { createdAt: string; body: string }, prefix = "") => `${prefix}${c.createdAt.slice(0, 10)}:\n\n${quote(c.body)}`;
 
   const sections = [
     threadBlocks.length ? `### Review threads\n\n${threadBlocks.join("\n\n")}` : null,

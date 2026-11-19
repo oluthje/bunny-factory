@@ -54,6 +54,6 @@ Pair each _before_ with its _after_, side by side in a table, referencing files 
 | ![Before: invoices list](evidence/before-invoices-list.png) | ![After: invoices list with refund date](evidence/after-invoices-list.png) |
 ```
 
-Under the table, add one line per pair saying what to look for. Add a line for anything you could not capture and why: a route that returns 502, a PDF, a third-party API the sandbox cannot reach.
+Under the table, add one line per pair saying what to look for. Add a line for anything you could not capture and why: a route that returns 502, a PDF, a third-party API the runner cannot reach.
 
 **Done when** every captured pair is in the table, and every gap has its reason.

@@ -1,51 +1,44 @@
-// The run prompt: sandbox/tasks/<task>/prompt.md filled in for one ticket. File I/O kept apart from tasks.ts.
+// The run prompt: tasks/<task>/prompt.md filled in for one ticket. The engine fills what every task
+// shares (the ticket, the evidence dir, the time limit); the task's `prepare` supplies the rest.
 import fs from "node:fs";
 import path from "node:path";
-import { GITHUB_MARKER, type Ticket } from "./logic.ts";
-import { renderTemplate, type TaskName } from "./tasks.ts";
+import type { TaskName } from "../tasks/index.ts";
+import type { Ticket } from "./logic.ts";
+import { EVIDENCE_DIR } from "./runner-paths.ts";
 
-/** What reaches the runner: each task's prompt and files (tasks/<task>/) and the skills runs upload (skills/). */
-export const SANDBOX_DIR = path.join(import.meta.dirname, "../sandbox");
-export const TASKS_DIR = path.join(SANDBOX_DIR, "tasks");
-export const SKILLS_DIR = path.join(SANDBOX_DIR, "skills");
+/** Each task's folder: its prompt.md and extract.md reach the runner. */
+export const TASKS_DIR = path.join(import.meta.dirname, "../tasks");
+/** What every run uploads whatever its task: the skills (only the task's own) and Claude Code's settings. */
+export const RUNNER_FILES_DIR = path.join(import.meta.dirname, "../runner-files");
+export const SKILLS_DIR = path.join(RUNNER_FILES_DIR, "skills");
 /** Claude Code's user settings for every run, uploaded to ~/.claude/settings.json. */
-export const SETTINGS_FILE = path.join(SANDBOX_DIR, "settings.json");
+export const SETTINGS_FILE = path.join(RUNNER_FILES_DIR, "settings.json");
 
-/**
- * `update` is null when the run creates (no branch on GitHub yet), or holds the rendered feedback
- * section when it builds on the ticket's existing branch. Only `implement` uses it.
- * `prBody` is the open PR's body, for `review`: context next to the ticket, which stays the spec.
- */
-export function buildPrompt(args: {
-  task: TaskName;
-  ticket: Ticket;
-  evidenceDir: string;
-  prBodyPath: string;
-  reviewPath: string;
-  timeLimitMinutes: number;
-  update: { feedback: string } | null;
-  prBody: string | null;
-}): string {
-  const { task, ticket, evidenceDir, prBodyPath, reviewPath, timeLimitMinutes, update, prBody } = args;
-  return renderTemplate(fs.readFileSync(path.join(TASKS_DIR, task, "prompt.md"), "utf8"), {
+/** Fills `{{name}}` placeholders; a placeholder with no value is a bug, so it throws. */
+export function renderTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => {
+    const v = vars[key];
+    if (v === undefined) throw new Error(`template placeholder {{${key}}} has no value`);
+    return v;
+  });
+}
+
+/** The task's prompt.md, as written: for checks that don't need it filled in. */
+export function promptTemplate(task: TaskName): string {
+  return fs.readFileSync(path.join(TASKS_DIR, task, "prompt.md"), "utf8");
+}
+
+/** `vars` are the task's own placeholders, from its `prepare`; a task can't override the shared ones. */
+export function buildPrompt(args: { task: TaskName; ticket: Ticket; timeLimitMinutes: number; vars: Record<string, string> }): string {
+  const { task, ticket, timeLimitMinutes, vars } = args;
+  return renderTemplate(promptTemplate(task), {
+    ...vars,
     identifier: ticket.identifier,
     title: ticket.title,
     url: ticket.url,
     description: ticket.description.trim() || "(no description)",
     branch: ticket.branchName,
-    evidenceDir,
-    prBodyPath,
-    reviewPath,
+    evidenceDir: EVIDENCE_DIR,
     timeLimitMinutes: String(timeLimitMinutes),
-    mode: update ? "update" : "create",
-    start: update
-      ? "checked out at the PR's current head in every repo that has it, and from an up-to-date `main` in the rest"
-      : "checked out from an up-to-date `main` in every repo",
-    feedback: update
-      ? `## Feedback for this round\n\nThe ticket's branch is already on GitHub with open PRs, so this run **updates** them. The ticket above is still the spec for the whole PR. The feedback below is what Oscar wants changed this round, on top of it.\n\n${update.feedback}`
-      : "",
-    prContext: prBody?.trim()
-      ? `## The PR body\n\nContext, not the spec: the implementer's account of the PR, with its Decisions and Gaps. Check what it claims against the code. A Decision recording that Oscar asked for a change that departs from the ticket is not a spec failure: judge that part against the request.\n\n<pr-body>\n${prBody.replaceAll(GITHUB_MARKER, "").trim()}\n</pr-body>`
-      : "",
   });
 }

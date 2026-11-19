@@ -33,7 +33,7 @@ LOG=out/build-$STAMP.log
 
 # The commit each repo's main is at, so the clone layer rebuilds when any of them moves.
 shas=""
-for r in api app portal kong; do
+for r in api app portal kong components docs docs-developer; do
   sha=$(GH_TOKEN=$GH_TOKEN gh api "repos/bunnyapp/$r/commits/main" --jq .sha) || die "can't read bunnyapp/$r"
   shas+="$r@${sha:0:12} "
 done

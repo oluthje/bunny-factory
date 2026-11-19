@@ -1,8 +1,8 @@
 // implement's reply pass: after an update run, the factory resumes the session and asks for one
-// reply per review thread it was given. Pure: no I/O, so it is unit-tested in test/replies.test.ts.
+// reply per review thread it was given. Pure: no I/O, so it is unit-tested in replies.test.ts.
 import { z } from "zod/v4";
-import { markForGithub } from "./logic.ts";
-import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "./structured.ts";
+import { markForGithub } from "../../src/logic.ts";
+import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "../../src/structured.ts";
 
 export const OUTCOMES = ["done", "declined", "answered"] as const;
 export type Outcome = (typeof OUTCOMES)[number];

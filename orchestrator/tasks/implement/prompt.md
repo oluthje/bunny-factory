@@ -9,6 +9,8 @@ This is a factory run of the `implement` task, in **{{mode}}** mode: build the t
 
 {{description}}
 
+{{thread}}
+
 {{feedback}}
 
 ## Run values

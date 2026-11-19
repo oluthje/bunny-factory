@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { renderFeedback, threadsWaitingOnFactory, type ReviewThread } from "../src/feedback.ts";
-import { GITHUB_MARKER, isFactoryGithubBody, linearComment, markForGithub } from "../src/logic.ts";
+import type { ReviewThread } from "../../src/comments.ts";
+import { GITHUB_MARKER, isFactoryGithubBody, linearComment, markForGithub } from "../../src/logic.ts";
+import { renderFeedback, threadsWaitingOnFactory } from "./feedback.ts";
 
 const viewer = "oscar";
 const factory = (body: string) => ({ author: viewer, body: markForGithub(body), createdAt: "2026-11-18T10:00:00Z" });

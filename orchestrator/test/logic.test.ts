@@ -1,31 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceCursor,
+  commentText,
   cursorAfterPoll,
+  decideRuns,
   asDaytona,
+  hasCommentTag,
+  inlineEvidence,
   isFactoryComment,
   linearComment,
   parseChangedRepos,
-  prBody,
-  prTitle,
-  reviewComment,
   sandboxName,
   selectNewTickets,
   shQuote,
-  type Ticket,
 } from "../src/logic.ts";
+import { ticket } from "./fixtures.ts";
 
-const ticket = (over: Partial<Ticket> = {}): Ticket => ({
-  id: "uuid-1",
-  identifier: "REC-123",
-  title: "Show the refund date on invoices",
-  description: "Invoices should show when they were refunded.",
-  url: "https://linear.app/bunnyinc/issue/REC-123",
-  branchName: "oscar/rec-123-show-the-refund-date-on-invoices",
-  labels: ["oscar-factory:implement"],
-  updatedAt: "2026-11-18T10:00:00.000Z",
-  ...over,
-});
 
 describe("selectNewTickets", () => {
   it("drops tickets that are busy", () => {
@@ -82,6 +72,30 @@ describe("cursorAfterPoll", () => {
   });
 });
 
+describe("comment tags", () => {
+  it("tags a factory comment on its marker line, and reads the tag back", () => {
+    const body = linearComment("## Verdict: easy-call", "run-1", "explore findings");
+    expect(body.split("\n")[0]).toBe("🏭 oscar-factory · run `run-1` · explore findings");
+    expect(hasCommentTag(body, "explore findings")).toBe(true);
+    expect(hasCommentTag(linearComment("Picked up.", "run-1"), "explore findings")).toBe(false);
+    expect(hasCommentTag("explore findings", "explore findings")).toBe(false);
+  });
+
+  it("gives a factory comment's text without its marker line", () => {
+    expect(commentText(linearComment("Hello\n\nWorld", "run-1", "explore findings"))).toBe("Hello\n\nWorld");
+    expect(commentText(" A human comment ")).toBe("A human comment");
+  });
+});
+
+describe("inlineEvidence", () => {
+  it("points evidence images at their uploaded URLs, and marks the missing ones", () => {
+    const body = "![Now](/home/daytona/artifacts/evidence/now.png) and ![Gone](evidence/gone.png)";
+    expect(inlineEvidence(body, { "now.png": "https://uploads.linear.app/now" })).toBe(
+      "![Now](https://uploads.linear.app/now) and Gone _(not captured)_",
+    );
+  });
+});
+
 describe("sandboxName", () => {
   it("is lowercase, prefixed and unique per run", () => {
     expect(sandboxName("REC-123", "01JABCDEFXYZ")).toBe("oscar-factory-rec-123-01jabcde");
@@ -111,18 +125,7 @@ describe("parseChangedRepos", () => {
   });
 });
 
-describe("PR and Linear text", () => {
-  it("titles the PR with the ticket", () => {
-    expect(prTitle(ticket())).toBe("REC-123: Show the refund date on invoices");
-  });
-
-  it("links the ticket and includes the agent's body in the PR body", () => {
-    const body = prBody(ticket(), "Added the date.", "run-1");
-    expect(body).toContain("https://linear.app/bunnyinc/issue/REC-123");
-    expect(body).toContain("Added the date.");
-    expect(body).toContain("run-1");
-  });
-
+describe("Linear text", () => {
   it("marks factory comments so pollers can skip them", () => {
     const body = linearComment("Opened PRs", "run-1");
     expect(isFactoryComment(body)).toBe(true);
@@ -130,12 +133,21 @@ describe("PR and Linear text", () => {
   });
 });
 
-describe("reviewComment", () => {
-  it("frames the review with the ticket and run, and says it is comment only", () => {
-    const body = reviewComment(ticket(), "## Standards\n\nFine.\n", "run-1");
-    expect(body).toContain("[REC-123](https://linear.app/bunnyinc/issue/REC-123)");
-    expect(body).toContain("## Standards\n\nFine.");
-    expect(body).toContain("run `run-1`");
-    expect(body).toContain("no approval or change request");
+describe("decideRuns", () => {
+  const at = (id: string, hour: number) => ({ ticket: ticket({ id, updatedAt: `2026-11-18T${String(hour).padStart(2, "0")}:00:00.000Z` }), task: "implement" });
+  const outcomes = (d: { ticket: { id: string }; outcome: string }[]) => d.map((x) => `${x.ticket.id}:${x.outcome}`);
+  const never = () => false;
+
+  it("starts up to the free slots, oldest first, and the rest wait", () => {
+    expect(outcomes(decideRuns([at("c", 12), at("a", 10), at("b", 11)], 2, never))).toEqual(["a:started", "b:started", "c:waiting"]);
+  });
+
+  it("starts nothing when every slot is taken, or more are in flight than the cap", () => {
+    expect(outcomes(decideRuns([at("a", 10)], 0, never))).toEqual(["a:waiting"]);
+    expect(outcomes(decideRuns([at("a", 10)], -1, never))).toEqual(["a:waiting"]);
+  });
+
+  it("gives a capped ticket no slot", () => {
+    expect(outcomes(decideRuns([at("a", 10), at("b", 11)], 1, (t) => t.id === "a"))).toEqual(["a:capped", "b:started"]);
   });
 });

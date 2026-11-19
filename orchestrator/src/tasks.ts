@@ -1,74 +1,9 @@
-// Tasks: what a run does, chosen by the ticket's factory label. `oscar-factory:<task>` starts a run
-// of the task with its prompt, and only that task's skills reach the sandbox. How labels move
-// between tasks is in transitions.ts.
+// The engine's view of the tasks in tasks/index.ts: which task a ticket's labels ask for, and which
+// skills a run uploads. Pure: no I/O, so it is unit-tested in test/tasks.test.ts.
+import { TASKS, type TaskName } from "../tasks/index.ts";
+import { LABEL_PREFIX, STATUS_LABELS } from "./labels.ts";
 
-export const LABEL_PREFIX = "oscar-factory:";
-
-/** Set by the factory while a run works on the ticket. A status, not a task. */
-export const IN_PROGRESS_LABEL = `${LABEL_PREFIX}in-progress`;
-/** Set by the factory when a run stops, however it ended: the ticket waits on a human. A status, not a task. */
-export const HUMAN_NEEDED_LABEL = `${LABEL_PREFIX}human-needed`;
-const STATUS_LABELS: readonly string[] = [IN_PROGRESS_LABEL, HUMAN_NEEDED_LABEL];
-
-/**
- * Each task's prompt is sandbox/tasks/<task>/prompt.md: the one entry point, which calls every
- * skill below with the Skill tool, in order. What a run of the task does before and after Claude
- * is in runs/<task>.ts; what differs between tasks in the run itself is here.
- * - `skills`: what the run uploads to the runner from sandbox/skills/: the skills the prompt calls,
- *   and the ones those call in turn.
- * - `browser`: the Playwright MCP server, for checking and capturing the UI.
- * - `branch`: the ticket's branch. `optional` builds on it where it's on GitHub and branches from
- *   main where it isn't; `required` fails the run when no repo has it on GitHub.
- * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
- * - `delivers`: what the pickup comment says the run will come back with.
- *
- * - `implement` creates or updates: it branches from main, or, when the ticket's branch is already on
- *   GitHub, builds on it, acting on Oscar's feedback with the ticket still the spec. It reviews and fixes its own work
- *   with `code-review`, and ends with commits and a PR body; the factory opens or updates draft PRs.
- * - `review` checks out the ticket's branch, fixes the findings it's confident about and commits them,
- *   and ends with a review file; the factory pushes the fixes, posts the review and marks the PRs
- *   ready. It runs specs, so it gets `oscar-factory-stack`, but no browser or evidence.
- */
-export type TaskConfig = {
-  skills: readonly string[];
-  browser: boolean;
-  branch: "optional" | "required";
-  timeLimitMinutes: number | null;
-  delivers: string;
-};
-
-export const TASKS = {
-  implement: {
-    skills: [
-      "oscar-factory-rules",
-      "oscar-factory-stack",
-      "oscar-factory-evidence",
-      "implement",
-      "tdd", // called by implement
-      "codebase-design", // called by tdd
-      "code-review",
-      "pr",
-    ],
-    browser: true,
-    branch: "optional",
-    timeLimitMinutes: null,
-    delivers: "the PR",
-  },
-  review: {
-    skills: ["oscar-factory-rules", "oscar-factory-stack", "code-review"],
-    browser: false,
-    branch: "required",
-    timeLimitMinutes: null,
-    delivers: "the review",
-  },
-} as const satisfies Record<string, TaskConfig>;
-
-export type TaskName = keyof typeof TASKS;
-
-/** The label that queues a run of the task. */
-export function taskLabel(task: TaskName): string {
-  return `${LABEL_PREFIX}${task}`;
-}
+export { TASKS, type TaskName };
 
 /** Every skill a run of this task uploads. */
 export function skillsFor(task: TaskName): string[] {
@@ -90,13 +25,4 @@ export function taskFromLabels(labels: string[]): TaskChoice {
     return { ok: false, reason: `Unknown factory label \`${factory[0]}\`. Known: ${known}.` };
   }
   return { ok: true, task: name as TaskName };
-}
-
-/** Fills `{{name}}` placeholders; a placeholder with no value is a bug, so it throws. */
-export function renderTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => {
-    const v = vars[key];
-    if (v === undefined) throw new Error(`template placeholder {{${key}}} has no value`);
-    return v;
-  });
 }

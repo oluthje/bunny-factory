@@ -1,8 +1,8 @@
 import { LinearClient } from "@linear/sdk";
 import { config } from "./config.ts";
-import type { TicketComment } from "./feedback.ts";
+import type { TicketComment } from "./comments.ts";
 import type { Ticket } from "./logic.ts";
-import { LABEL_PREFIX } from "./tasks.ts";
+import { LABEL_PREFIX } from "./labels.ts";
 import type { LabelChange } from "./transitions.ts";
 
 let client: LinearClient | undefined;
