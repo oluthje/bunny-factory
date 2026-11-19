@@ -1,6 +1,6 @@
-import { countRuns, getCursor, recordRun, setCursor, ticketRunInFlight } from "../db/index.ts";
+import { anyRunInFlight, countRuns, getCursor, recordRun, setCursor, ticketRunInFlight } from "../db/index.ts";
 import { applyLabels, comment, fetchOptedInTickets } from "../linear.ts";
-import { advanceCursor, linearComment, selectNewTickets } from "../logic.ts";
+import { cursorAfterPoll, linearComment, selectNewTickets } from "../logic.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
 import { taskFromLabels, taskLabel } from "../tasks.ts";
 import { LOOP_CAP, pickedUp, refused } from "../transitions.ts";
@@ -13,6 +13,9 @@ const CURSOR = "linear.updatedAt";
  * both arrive here as a label.
  * - Picking a ticket up takes its task label off, so adding it again asks for another run.
  * - A ticket with a run queued or working waits: the run's end changes its labels, which brings it back.
+ * - One run at a time across the factory: a poll starts a run only when none is in flight, oldest
+ *   ticket first. The rest keep their task label and wait in Linear, and the cursor stops short of
+ *   them, so a later poll fetches them again. Inngest can't hold runs apart (see runTicket).
  * - Past the loop cap the task isn't started, and the ticket waits on Oscar.
  * A ticket with an unknown or ambiguous factory label is skipped and reported in this function's
  * output, not on the ticket: a comment would bump `updatedAt` and bring it back every poll.
@@ -28,19 +31,20 @@ export const pollLinear = inngest.createFunction(
     );
     const runnable = choices.flatMap(({ ticket, choice }) => (choice.ok ? [{ ticket, task: choice.task }] : []));
 
-    const decided = await step.run("record-runs", () =>
-      runnable.map(({ ticket, task }) =>
-        countRuns(ticket.id, task) >= LOOP_CAP
-          ? { ticket, task, runId: null }
-          : {
-              ticket,
-              task,
-              runId: recordRun({ ticketId: ticket.id, ticketIdentifier: ticket.identifier, task, trigger: "linear-label" }),
-            },
-      ),
-    );
+    // Oldest first: once the one slot is taken, every later ticket waits.
+    const decided = await step.run("record-runs", () => {
+      let slotFree = !anyRunInFlight();
+      return runnable.map(({ ticket, task }) => {
+        if (countRuns(ticket.id, task) >= LOOP_CAP) return { ticket, task, outcome: "capped" as const, runId: null };
+        if (!slotFree) return { ticket, task, outcome: "waiting" as const, runId: null };
+        slotFree = false;
+        const runId = recordRun({ ticketId: ticket.id, ticketIdentifier: ticket.identifier, task, trigger: "linear-label" });
+        return { ticket, task, outcome: "started" as const, runId };
+      });
+    });
 
-    for (const { ticket, task, runId } of decided) {
+    for (const { ticket, task, outcome, runId } of decided) {
+      if (outcome === "waiting") continue;
       if (runId === null) {
         await step.run(`refuse-${ticket.identifier}`, async () => {
           await comment(
@@ -73,12 +77,12 @@ export const pollLinear = inngest.createFunction(
     }
 
     await step.run("advance-cursor", () => {
-      const next = advanceCursor(getCursor(CURSOR), tickets);
+      const waiting = decided.find((d) => d.outcome === "waiting")?.ticket ?? null;
+      const next = cursorAfterPoll(getCursor(CURSOR), tickets, waiting);
       if (next) setCursor(CURSOR, next);
       return next;
     });
-    const started = decided.filter((d) => d.runId !== null).map((d) => d.ticket.identifier);
-    const capped = decided.filter((d) => d.runId === null).map((d) => d.ticket.identifier);
-    return { seen: tickets.length, started, capped, skipped };
+    const named = (outcome: string) => decided.filter((d) => d.outcome === outcome).map((d) => d.ticket.identifier);
+    return { seen: tickets.length, started: named("started"), waiting: named("waiting"), capped: named("capped"), skipped };
   },
 );

@@ -42,6 +42,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
      - **Pickup.** The poller takes the task label off and adds **`oscar-factory:in-progress`**. Adding the task label again asks for another run.
      - **A run ends.** The factory removes in-progress. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. Today the chain is one step: an `implement` run that pushed commits hands off to `oscar-factory:review`.
      - **The poller is the only thing that starts runs.** A ticket with a run queued or working waits, and the run's end brings it back.
+     - **One run at a time, held by the poller.** It starts a run only when none is in flight, oldest ticket first; the rest keep their task label and wait in Linear. Inngest's concurrency limit can't do this: it counts only executing steps, and a run's `step.sleep` waits free the slot.
      - **Loop cap:** 5 runs of one task per ticket. Past it, the poller refuses the run and the ticket waits on Oscar.
      - The poller ignores in-progress and human-needed when choosing a task.
    - Every factory comment carries a marker, so the pollers skip the factory's own comments.

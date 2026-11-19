@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceCursor,
+  cursorAfterPoll,
   asDaytona,
   isFactoryComment,
   linearComment,
@@ -55,6 +56,29 @@ describe("advanceCursor", () => {
   it("keeps the cursor when there are no issues", () => {
     expect(advanceCursor(null, [])).toBeNull();
     expect(advanceCursor("2026-11-18T13:00:00.000Z", [])).toBe("2026-11-18T13:00:00.000Z");
+  });
+});
+
+describe("cursorAfterPoll", () => {
+  const older = ticket({ id: "a", updatedAt: "2026-11-18T10:00:00.000Z" });
+  const waiting = ticket({ id: "b", updatedAt: "2026-11-18T11:00:00.000Z" });
+  const newer = ticket({ id: "c", updatedAt: "2026-11-18T12:00:00.000Z" });
+
+  it("stops short of the ticket left waiting, so the next poll fetches it again", () => {
+    expect(cursorAfterPoll("2026-11-18T09:00:00.000Z", [older, waiting, newer], waiting)).toBe(older.updatedAt);
+  });
+
+  it("stays put when the oldest ticket is the one waiting", () => {
+    expect(cursorAfterPoll("2026-11-18T09:00:00.000Z", [waiting, newer], waiting)).toBe("2026-11-18T09:00:00.000Z");
+  });
+
+  it("does not pass a ticket updated at the same moment as the waiting one", () => {
+    const tie = ticket({ id: "d", updatedAt: waiting.updatedAt });
+    expect(cursorAfterPoll(null, [older, tie, waiting], waiting)).toBe(older.updatedAt);
+  });
+
+  it("moves to the newest ticket when nothing waits", () => {
+    expect(cursorAfterPoll(null, [older, waiting, newer], null)).toBe(newer.updatedAt);
   });
 });
 

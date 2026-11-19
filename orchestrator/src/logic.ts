@@ -46,6 +46,14 @@ export function advanceCursor(prev: string | null, issues: Ticket[]): string | n
   return issues.reduce<string | null>((max, t) => (max === null || t.updatedAt > max ? t.updatedAt : max), prev);
 }
 
+/**
+ * The cursor after a poll that left `waiting` (the oldest ticket it couldn't start) for later: it
+ * stops short of that ticket, so the next poll fetches it again. With nothing waiting, `advanceCursor`.
+ */
+export function cursorAfterPoll(prev: string | null, issues: Ticket[], waiting: Ticket | null): string | null {
+  return advanceCursor(prev, waiting ? issues.filter((t) => t.updatedAt < waiting.updatedAt) : issues);
+}
+
 export function sandboxName(identifier: string, runId: string): string {
   return `oscar-factory-${identifier}-${runId.slice(0, 8)}`.toLowerCase();
 }

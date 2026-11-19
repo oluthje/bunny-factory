@@ -123,7 +123,9 @@ export const runTicket = inngest.createFunction(
   {
     id: "run-ticket",
     triggers: [{ event: RUN_REQUESTED }],
-    // Runs share Oscar's Claude subscription limits.
+    // Not what keeps runs apart: Inngest counts only steps that are executing, and a run spends
+    // most of its life in step.sleep, which frees the slot. The poller starts one run at a time
+    // (poll-linear.ts). This only stops two runs' steps from executing at the same moment.
     concurrency: { limit: 1 },
     retries: 2,
     onFailure: async ({ event, step }) => {

@@ -35,6 +35,11 @@ export function ticketRunInFlight(ticketId: string): boolean {
   );
 }
 
+/** A run on any ticket is queued or working. The factory has one run at a time: see poll-linear.ts. */
+export function anyRunInFlight(): boolean {
+  return db.select({ id: runs.id }).from(runs).where(inArray(runs.status, ["requested", "running"])).get() !== undefined;
+}
+
 /** How many runs of the task the ticket has had, for the loop cap. */
 export function countRuns(ticketId: string, task: string): number {
   return db.select({ n: count() }).from(runs).where(and(eq(runs.ticketId, ticketId), eq(runs.task, task))).get()?.n ?? 0;
