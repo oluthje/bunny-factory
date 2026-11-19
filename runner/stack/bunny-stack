@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# The lightweight bunny stack: api, jobs, app and portal as plain processes, with no Docker.
+# Shared services (postgres, redis, maildev, caddy) come from bunny-infra.
+#
+#   bunny-stack setup              clone missing repos, install gems and node modules, prepare the db
+#   bunny-stack up [svc...]        setup, then start services (default: all) and wait for their ports
+#   bunny-stack down [svc...]      stop services (default: all)
+#   bunny-stack restart <svc...>   stop, then start
+#   bunny-stack status             infra and service health
+#   bunny-stack logs <svc> [-f]    a service's log (also: $BUNNY_ROOT/.stack/logs/<svc>.log)
+#   bunny-stack run <svc> <cmd...> run a command in a service's directory and environment,
+#                                  e.g. bunny-stack run api bin/rails c
+#   bunny-stack smoke              check the stack end to end through caddy
+#
+# Services: api (Rails on :3000), jobs (Solid Queue), app (Vite on :3002), portal (Vite on :3006).
+# Browse at https://bunny.bunny.internal/app and https://bunny.bunny.internal/portal.
+#
+# Environment:
+#   BUNNY_ROOT      where the repos live (default ~/bunny)
+#   BUNNY_GIT_BASE  where to clone them from (default https://github.com/bunnyapp)
+#   BUNNY_CLONE_ARGS  extra git clone flags (default --filter=blob:none for remote URLs)
+#   GH_TOKEN        used for private gems when BUNDLE_GITHUB__COM isn't set
+#   $BUNNY_ROOT/stack.env  optional KEY=VALUE overrides for api and jobs, loaded last
+set -euo pipefail
+
+BUNNY_ROOT="${BUNNY_ROOT:-$HOME/bunny}"
+BUNNY_GIT_BASE="${BUNNY_GIT_BASE:-https://github.com/bunnyapp}"
+STACK_DIR="${BUNNY_STACK_DIR:-/opt/bunny-stack}"
+STATE="$BUNNY_ROOT/.stack"
+REPOS=(api app portal kong)
+SERVICES=(api jobs app portal)
+export BUNDLE_PATH="${BUNDLE_PATH:-$HOME/.bunny-stack/bundle}"
+export PGPASSWORD=postgres
+BUNNY_CA=/etc/bunny-stack/certs/bunny.internal.crt
+# The caller's bundle, if any. Daytona's egress proxy (Secrets, domain allow lists) points
+# NODE_EXTRA_CA_CERTS at its own CA; overwriting it would break Node's HTTPS egress, so
+# node_ca_env appends the bunny cert to it instead.
+INHERITED_NODE_CA="${NODE_EXTRA_CA_CERTS:-}"
+
+# shellcheck source=proxy-env.sh
+source "$STACK_DIR/proxy-env.sh"
+
+mkdir -p "$STATE/logs" "$STATE/pids"
+
+say()  { printf '\033[34m▸\033[0m %s\n' "$*"; }
+warn() { printf '\033[33m⚠\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# Load a compose-style env file (KEY=VALUE, # comments, optional surrounding quotes) into the
+# environment. Values are taken literally, with no shell expansion, as docker's env_file does.
+load_env_file() {
+  local file=$1 line key val
+  [[ -f $file ]] || return 0
+  while IFS= read -r line || [[ -n $line ]]; do
+    line="${line%$'\r'}"
+    [[ $line =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    key=${BASH_REMATCH[2]} val=${BASH_REMATCH[3]}
+    if [[ $val =~ ^\"(.*)\"$ || $val =~ ^\'(.*)\'$ ]]; then val=${BASH_REMATCH[1]}; fi
+    export "$key=$val"
+  done <"$file"
+}
+
+# Same precedence as the compose stack: the repo's .env, then the branch env, then the
+# orchestration overrides. stack.env is the escape hatch for local tweaks.
+api_env() {
+  load_env_file "$BUNNY_ROOT/api/.env"
+  load_env_file "$BUNNY_ROOT/api/tmp/.env.branch"
+  load_env_file "$STACK_DIR/api.env"
+  load_env_file "$BUNNY_ROOT/stack.env"
+}
+
+# The compose stack's environment for app and portal. Vite reads each repo's .env itself.
+frontend_env() {
+  export NODE_ENV=development REACT_APP_API_URL=http://localhost:3000 REACT_APP_ALLOW_SW_REGISTER=true
+  # Vite's esbuild service is a Go binary that otherwise holds on to 1 GB+ after dependency
+  # pre-bundling. A soft heap cap makes Go collect sooner; it doesn't fail builds.
+  export GOMEMLIMIT="${GOMEMLIMIT:-384MiB}"
+  case $1 in
+    app)    export REACT_APP_PORT=3001 PUBLIC_URL=/app ;;
+    portal) export REACT_APP_PORT=3002 ;;
+  esac
+}
+
+svc_dir() { case $1 in api|jobs) echo "$BUNNY_ROOT/api" ;; *) echo "$BUNNY_ROOT/$1" ;; esac; }
+svc_port() { case $1 in api) echo 3000 ;; app) echo 3002 ;; portal) echo 3006 ;; *) echo "" ;; esac; }
+
+# The commands npm start and the compose services run, called directly. app's npm start uses
+# `[[` under `sh`, which fails on Ubuntu's dash, so vite is invoked as the script would.
+svc_cmd() {
+  case $1 in
+    api)    echo "rm -f tmp/pids/server.pid; exec bundle exec rails server" ;;
+    jobs)   echo "exec bin/jobs start --mode=async -c '$STACK_DIR/queue.yml'" ;;
+    app)    echo "exec ./node_modules/.bin/vite" ;;
+    portal) echo "exec ./node_modules/.bin/vite" ;;
+    *) die "unknown service: $1 (services: ${SERVICES[*]})" ;;
+  esac
+}
+
+# Node trusts the bunny.internal cert on top of whatever bundle the caller already had.
+node_ca_env() {
+  [[ -r $BUNNY_CA ]] || return 0
+  if [[ -n $INHERITED_NODE_CA && -r $INHERITED_NODE_CA && $INHERITED_NODE_CA != "$BUNNY_CA" \
+        && $INHERITED_NODE_CA != "$STATE/node-extra-ca.pem" ]]; then
+    local combined="$STATE/node-extra-ca.pem"
+    cat "$INHERITED_NODE_CA" "$BUNNY_CA" >"$combined.tmp" && mv "$combined.tmp" "$combined"
+    export NODE_EXTRA_CA_CERTS="$combined"
+  else
+    export NODE_EXTRA_CA_CERTS="$BUNNY_CA"
+  fi
+}
+
+svc_env() { node_ca_env; case $1 in api|jobs) api_env ;; app|portal) frontend_env "$1" ;; esac; }
+
+pid_of() {
+  local f="$STATE/pids/$1.pid" pid
+  [[ -f $f ]] || return 1
+  pid=$(<"$f")
+  kill -0 "$pid" 2>/dev/null && echo "$pid" || { rm -f "$f"; return 1; }
+}
+
+start_svc() {
+  local svc=$1 dir cmd
+  if pid_of "$svc" >/dev/null; then say "$svc already running"; return; fi
+  dir=$(svc_dir "$svc"); cmd=$(svc_cmd "$svc")
+  [[ -d $dir ]] || die "$dir is missing: run bunny-stack setup"
+  (
+    cd "$dir"
+    svc_env "$svc"
+    printf '\n=== %s starting %s ===\n' "$(date -Is)" "$svc" >>"$STATE/logs/$svc.log"
+    # Its own session, so `down` can stop the whole process group (vite/esbuild children too).
+    setsid bash -c "$cmd" >>"$STATE/logs/$svc.log" 2>&1 </dev/null &
+    echo $! >"$STATE/pids/$svc.pid"
+  )
+  say "$svc started (log: $STATE/logs/$svc.log)"
+}
+
+stop_svc() {
+  local svc=$1 pid
+  pid=$(pid_of "$svc") || { say "$svc not running"; return 0; }
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for _ in $(seq 1 15); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  kill -KILL -- "-$pid" 2>/dev/null || true
+  rm -f "$STATE/pids/$svc.pid"
+  say "$svc stopped"
+}
+
+wait_ready() { # wait_ready svc... : wait for each service with a port to accept connections
+  local svc port deadline=$((SECONDS + ${BUNNY_STACK_TIMEOUT:-240}))
+  for svc in "$@"; do
+    port=$(svc_port "$svc"); [[ -n $port ]] || continue
+    until port_open "$port"; do
+      pid_of "$svc" >/dev/null || die "$svc exited during startup. Last log lines:
+$(tail -n 30 "$STATE/logs/$svc.log")"
+      (( SECONDS < deadline )) || die "$svc did not open :$port in time (bunny-stack logs $svc)"
+      sleep 2
+    done
+    say "$svc ready on :$port"
+  done
+}
+
+infra() { sudo BUNNY_ROOT="$BUNNY_ROOT" BUNNY_STACK_DIR="$STACK_DIR" "$STACK_DIR/bunny-infra" "$@"; }
+
+cmd_setup() {
+  local r
+  mkdir -p "$BUNNY_ROOT"
+  for r in "${REPOS[@]}"; do
+    if [[ ! -d $BUNNY_ROOT/$r/.git && ! -f $BUNNY_ROOT/$r/.git ]]; then
+      say "cloning $r"
+      # Blobless: every commit and tree (log, merge-base, rebase, push all work), but old file
+      # versions are fetched only on demand. app's .git drops from ~200 MB to ~10 MB.
+      # Local-path sources can't serve filters (git then fetches blob by blob), so only filter remotes.
+      local default_args=""; [[ $BUNNY_GIT_BASE == *://* || $BUNNY_GIT_BASE == *@*:* ]] && default_args="--filter=blob:none"
+      git clone -q ${BUNNY_CLONE_ARGS-$default_args} "$BUNNY_GIT_BASE/$r" "$BUNNY_ROOT/$r"
+    fi
+  done
+  for r in api app portal; do
+    if [[ ! -f $BUNNY_ROOT/$r/.env && -f $BUNNY_ROOT/$r/.env.example ]]; then
+      cp "$BUNNY_ROOT/$r/.env.example" "$BUNNY_ROOT/$r/.env"; say "created $r/.env from .env.example"
+    fi
+  done
+
+  infra start
+
+  say "api: gems"
+  (
+    cd "$BUNNY_ROOT/api"
+    # Private gem auth: a BUNDLE_GITHUB__COM from the caller, else the sandbox's GH_TOKEN, else
+    # whatever api/.env has (.env.example ships a placeholder, so api_env mustn't win).
+    local gem_auth=${BUNDLE_GITHUB__COM:-}
+    [[ -n $gem_auth || -z ${GH_TOKEN:-} ]] || gem_auth="x-access-token:$GH_TOKEN"
+    api_env
+    [[ -z $gem_auth ]] || export BUNDLE_GITHUB__COM="$gem_auth"
+    local bv; bv=$(awk '/^BUNDLED WITH/{getline; print $1}' Gemfile.lock)
+    [[ -z $bv ]] || gem list -i bundler -v "$bv" >/dev/null || gem install -N bundler -v "$bv" >/dev/null
+    bundle check >/dev/null 2>&1 || bundle install --jobs 4 --quiet
+  )
+
+  for r in app portal; do
+    (
+      cd "$BUNNY_ROOT/$r"
+      if [[ ! -d node_modules ]]; then
+        # hop runs `npm install`; prefer the exact lockfile, but fall back the same way when a
+        # repo's lockfile is out of sync (that rewrites package-lock.json, as hop does).
+        say "$r: npm ci"
+        npm ci --no-audit --no-fund --loglevel=error 2>/dev/null || {
+          warn "$r: lockfile out of sync with package.json, using npm install"
+          npm install --no-audit --no-fund --loglevel=error
+        }
+      elif [[ package-lock.json -nt node_modules/.package-lock.json ]]; then
+        say "$r: npm install (lockfile changed)"; npm install --no-audit --no-fund --loglevel=error
+      fi
+    )
+  done
+
+  (
+    cd "$BUNNY_ROOT/api"
+    api_env
+    if [[ -z $(psql -h 127.0.0.1 -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME:-bunny_development}'") ]]; then
+      # What hop's first-run init does: schema, seeds, migrations, then dev CORS origins.
+      say "api: fresh database, running db:setup (schema + seeds; takes a few minutes)"
+      bin/rails db:setup db:migrate
+      bin/rails runner 'Company.update_all(whitelisted_origin: "bunny.bunny.internal testdata.bunny.internal localhost")'
+    else
+      say "api: db:migrate"
+      bin/rails db:migrate
+    fi
+  )
+  say "setup done"
+}
+
+resolve_svcs() { if (($#)); then printf '%s\n' "$@"; else printf '%s\n' "${SERVICES[@]}"; fi; }
+
+cmd_status() {
+  infra status
+  local svc port state
+  for svc in "${SERVICES[@]}"; do
+    port=$(svc_port "$svc")
+    if ! pid_of "$svc" >/dev/null; then state="stopped"
+    elif [[ -n $port ]] && ! port_open "$port"; then state="starting (pid $(pid_of "$svc"))"
+    else state="up (pid $(pid_of "$svc"))"; fi
+    printf '%-9s %s\n' "$svc" "$state"
+  done
+}
+
+cmd_smoke() {
+  local fail=0 code
+  check() { # check "label" expected-regex curl-args...
+    local label=$1 want=$2; shift 2
+    code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 60 "$@" || true)
+    if [[ $code =~ $want ]]; then say "ok   $label ($code)"; else warn "FAIL $label (got $code)"; fail=1; fi
+  }
+  check "app through caddy"     '^200$' https://bunny.bunny.internal/app/
+  check "portal through caddy"  '^200$' https://bunny.bunny.internal/portal/
+  check "api graphql through caddy" '^(200|401|403)$' -X POST -H 'Content-Type: application/json' \
+    --data '{"query":"{ __typename }"}' https://bunny.bunny.internal/graphql
+  check "maildev UI"            '^200$' http://127.0.0.1:8025/
+  pid_of jobs >/dev/null && say "ok   jobs process running" || { warn "FAIL jobs not running"; fail=1; }
+  return $fail
+}
+
+main() {
+  local cmd=${1:-help}; shift || true
+  case $cmd in
+    setup) cmd_setup ;;
+    up)
+      cmd_setup
+      mapfile -t svcs < <(resolve_svcs "$@")
+      for s in "${svcs[@]}"; do start_svc "$s"; done
+      wait_ready "${svcs[@]}"
+      say "up: https://bunny.bunny.internal/app  https://bunny.bunny.internal/portal  mail http://127.0.0.1:8025"
+      ;;
+    down)
+      mapfile -t svcs < <(resolve_svcs "$@")
+      for s in "${svcs[@]}"; do stop_svc "$s"; done
+      ;;
+    restart)
+      (($#)) || die "usage: bunny-stack restart <svc...>"
+      for s in "$@"; do stop_svc "$s"; start_svc "$s"; done
+      wait_ready "$@"
+      ;;
+    status) cmd_status ;;
+    logs)
+      [[ -n ${1:-} ]] || die "usage: bunny-stack logs <svc> [-f]"
+      if [[ ${2:-} == -f ]]; then tail -n 100 -f "$STATE/logs/$1.log"; else tail -n 200 "$STATE/logs/$1.log"; fi
+      ;;
+    run)
+      [[ -n ${1:-} && -n ${2:-} ]] || die "usage: bunny-stack run <svc> <cmd...>"
+      local svc=$1; shift
+      cd "$(svc_dir "$svc")"; svc_env "$svc"; exec "$@"
+      ;;
+    smoke) cmd_smoke ;;
+    help|-h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;
+    *) die "unknown command: $cmd (try bunny-stack help)" ;;
+  esac
+}
+
+main "$@"

@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Shared services for the lightweight bunny stack: postgres, redis, maildev and caddy (in
+# place of kong). Runs as root: maildev listens on 25 (api hardcodes the SMTP port) and
+# caddy on 80/443. The entrypoint runs `bunny-infra start` at boot; `bunny-stack` runs it
+# again through sudo. Every step is idempotent.
+#
+#   bunny-infra start | stop | status
+set -euo pipefail
+
+BUNNY_ROOT="${BUNNY_ROOT:-/home/daytona/bunny}"
+STACK_DIR="${BUNNY_STACK_DIR:-/opt/bunny-stack}"
+CERT_DIR=/etc/bunny-stack/certs
+LOG_DIR=/var/log/bunny-stack
+PG_VERSION="${PG_VERSION:-18}"
+HOSTS_LINE="127.0.0.1 bunny.internal bunny.bunny.internal testdata.bunny.internal"
+
+[[ $EUID -eq 0 ]] || { echo "bunny-infra must run as root (try: sudo bunny-infra $*)" >&2; exit 1; }
+mkdir -p "$LOG_DIR" "$CERT_DIR"
+
+log()  { printf '[infra] %s\n' "$*"; }
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+wait_port() { # wait_port PORT NAME
+  for _ in $(seq 1 30); do port_open "$1" && return 0; sleep 1; done
+  echo "[infra] $2 did not open port $1 (logs: $LOG_DIR)" >&2; return 1
+}
+
+start_postgres() {
+  if pg_isready -q -h 127.0.0.1; then log "postgres already running"; return; fi
+  pg_ctlcluster "$PG_VERSION" main start
+  for _ in $(seq 1 30); do pg_isready -q -h 127.0.0.1 && break; sleep 1; done
+  # The compose stack's postgres/postgres superuser, reachable over TCP.
+  su postgres -c "psql -qc \"ALTER USER postgres PASSWORD 'postgres'\"" >/dev/null
+  log "postgres started"
+}
+
+start_redis() {
+  if redis-cli ping >/dev/null 2>&1; then log "redis already running"; return; fi
+  # No persistence: a sandbox's cache and job locks don't need to survive a restart.
+  redis-server --daemonize yes --bind 127.0.0.1 --save "" --appendonly no \
+    --logfile "$LOG_DIR/redis.log"
+  wait_port 6379 redis
+  log "redis started"
+}
+
+start_maildev() {
+  if port_open 25; then log "maildev already running"; return; fi
+  setsid maildev --smtp 25 --web 8025 --ip 127.0.0.1 >"$LOG_DIR/maildev.log" 2>&1 </dev/null &
+  wait_port 25 maildev
+  log "maildev started (web UI on http://127.0.0.1:8025)"
+}
+
+install_cert() {
+  local src_crt="$BUNNY_ROOT/kong/bunny.internal.crt" src_key="$BUNNY_ROOT/kong/bunny.internal.key"
+  if [[ -f $src_crt && -f $src_key ]]; then
+    # The team's dev cert (CN bunny.internal, SAN *.bunny.internal), from the kong repo.
+    cmp -s "$src_crt" "$CERT_DIR/bunny.internal.crt" || {
+      install -m 644 "$src_crt" "$CERT_DIR/bunny.internal.crt"
+      install -m 600 "$src_key" "$CERT_DIR/bunny.internal.key"
+      log "installed the kong repo's bunny.internal cert"
+    }
+  elif [[ ! -f $CERT_DIR/bunny.internal.crt ]]; then
+    # kong isn't cloned yet: self-sign so caddy can start. Replaced once kong is cloned.
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=bunny.internal" \
+      -addext "subjectAltName=DNS:bunny.internal,DNS:*.bunny.internal" \
+      -keyout "$CERT_DIR/bunny.internal.key" -out "$CERT_DIR/bunny.internal.crt" 2>/dev/null
+    log "no kong repo yet: using a self-signed bunny.internal cert"
+  fi
+  # Trust it system-wide (curl, ruby). Node needs NODE_EXTRA_CA_CERTS, which bunny-stack sets.
+  if ! cmp -s "$CERT_DIR/bunny.internal.crt" /usr/local/share/ca-certificates/bunny-internal.crt; then
+    install -m 644 "$CERT_DIR/bunny.internal.crt" /usr/local/share/ca-certificates/bunny-internal.crt
+    update-ca-certificates >/dev/null 2>&1 || true
+  fi
+  trust_cert_in_chromium || log "could not add the cert to Chromium's NSS store"
+}
+
+# Chromium on Linux ignores update-ca-certificates and reads the user's NSS DB instead:
+# $HOME/.local/share/pki/nssdb (M146+), or $HOME/.pki/nssdb if that already exists.
+trust_cert_in_chromium() {
+  local user=daytona home db
+  command -v certutil >/dev/null 2>&1 && id -u "$user" >/dev/null 2>&1 || return 0
+  home=$(getent passwd "$user" | cut -d: -f6)
+  for db in "$home/.local/share/pki/nssdb" "$home/.pki/nssdb"; do
+    [[ $db == "$home/.pki/nssdb" && ! -d $db ]] && continue
+    sudo -u "$user" mkdir -p "$db"
+    [[ -f $db/cert9.db ]] || sudo -u "$user" certutil -d "sql:$db" -N --empty-password
+    sudo -u "$user" certutil -d "sql:$db" -D -n bunny.internal >/dev/null 2>&1 || true
+    sudo -u "$user" certutil -d "sql:$db" -A -t "P,," -n bunny.internal -i "$CERT_DIR/bunny.internal.crt"
+  done
+}
+
+ensure_hosts() {
+  grep -q 'bunny.bunny.internal' /etc/hosts 2>/dev/null && return
+  # A docker build's /etc/hosts may be read-only; the entrypoint adds the line at boot anyway.
+  { echo "$HOSTS_LINE" >>/etc/hosts; } 2>/dev/null || log "could not write /etc/hosts"
+}
+
+start_caddy() {
+  local cfg="$STACK_DIR/Caddyfile"
+  if curl -fsS -o /dev/null http://localhost:2019/config/ 2>/dev/null; then
+    caddy reload --config "$cfg" --adapter caddyfile >>"$LOG_DIR/caddy.log" 2>&1
+    log "caddy reloaded"
+  else
+    caddy start --config "$cfg" --adapter caddyfile >>"$LOG_DIR/caddy.log" 2>&1
+    wait_port 443 caddy
+    log "caddy started"
+  fi
+}
+
+case "${1:-start}" in
+  start)
+    ensure_hosts
+    start_postgres
+    start_redis
+    start_maildev
+    install_cert
+    start_caddy
+    ;;
+  stop)
+    caddy stop >/dev/null 2>&1 || true
+    pkill -f 'maildev --smtp 25' || true
+    redis-cli shutdown nosave >/dev/null 2>&1 || true
+    pg_ctlcluster "$PG_VERSION" main stop 2>/dev/null || true
+    log "stopped"
+    ;;
+  status)
+    pg_isready -q -h 127.0.0.1 && echo "postgres  up" || echo "postgres  DOWN"
+    redis-cli ping >/dev/null 2>&1 && echo "redis     up" || echo "redis     DOWN"
+    port_open 25 && echo "maildev   up" || echo "maildev   DOWN"
+    port_open 443 && echo "caddy     up" || echo "caddy     DOWN"
+    ;;
+  *) echo "usage: bunny-infra start|stop|status" >&2; exit 2 ;;
+esac

@@ -1,0 +1,136 @@
+# Replaces kong for the lightweight stack. A port of kong/kong.yml (keep the two in step):
+# kong strips the matched route prefix and appends the rest to the service URL, which for
+# most routes is the same path, so most routes below are plain pass-throughs.
+#
+# Like kong, the upstream gets Host = its own host:port and the original Host (with port)
+# in X-Forwarded-Host, which Rails uses to rebuild base_url.
+#
+# Not ported: login, widget, metabase (/bi) and admin (/packs, /assets). Those services
+# aren't part of this stack (or of the standard local stack), so their routes return 502.
+{
+	admin localhost:2019
+	auto_https off
+}
+
+(upstreams) {
+	header_up Host {upstream_hostport}
+}
+
+(routes) {
+	route {
+		# kong evaluates regex routes before prefix routes. kong strips the whole match
+		# (up to the last slash) and appends the remainder to /forms/.
+		@forms path_regexp forms ^/app/forms/.*/(.*)$
+		handle @forms {
+			rewrite * /forms/{re.forms.1}
+			reverse_proxy 127.0.0.1:3000 {
+				import upstreams
+			}
+		}
+
+		@oauthMeta path_regexp oauthMeta ^/\.well-known/oauth-authorization-server(.*)$
+		handle @oauthMeta {
+			rewrite * /oauth/metadata{re.oauthMeta.1}
+			reverse_proxy 127.0.0.1:3000 {
+				import upstreams
+			}
+		}
+
+		@oauthResource path_regexp oauthResource ^/\.well-known/oauth-protected-resource(.*)$
+		handle @oauthResource {
+			rewrite * /oauth/protected_resource{re.oauthResource.1}
+			reverse_proxy 127.0.0.1:3000 {
+				import upstreams
+			}
+		}
+
+		handle /.well-known/apple-app-site-association* {
+			rewrite * /app/.well-known/apple-app-site-association.json
+			reverse_proxy 127.0.0.1:3002 {
+				import upstreams
+			}
+		}
+
+		# /static/js goes to app; the rest of /static goes to api with /static stripped.
+		handle /static/js* {
+			reverse_proxy 127.0.0.1:3002 {
+				import upstreams
+			}
+		}
+		handle_path /static* {
+			reverse_proxy 127.0.0.1:3000 {
+				import upstreams
+			}
+		}
+
+		handle_path /forms* {
+			rewrite * /app/forms{path}
+			reverse_proxy 127.0.0.1:3002 {
+				import upstreams
+			}
+		}
+
+		# kong's cors plugin on the oauth service: any origin, with credentials.
+		handle /oauth* {
+			@preflight {
+				method OPTIONS
+				header Origin *
+			}
+			handle @preflight {
+				header Access-Control-Allow-Origin {http.request.header.Origin}
+				header Access-Control-Allow-Credentials true
+				header Access-Control-Allow-Methods "POST,OPTIONS"
+				header Access-Control-Allow-Headers {http.request.header.Access-Control-Request-Headers}
+				header Vary Origin
+				respond 200
+			}
+			@hasOrigin header Origin *
+			header @hasOrigin Access-Control-Allow-Origin {http.request.header.Origin}
+			header @hasOrigin Access-Control-Allow-Credentials true
+			header @hasOrigin Vary Origin
+			reverse_proxy 127.0.0.1:3000 {
+				import upstreams
+				header_down -Access-Control-Allow-Origin
+				header_down -Access-Control-Allow-Credentials
+			}
+		}
+
+		@api path /api* /rails* /graphql* /sidekiq*
+		handle @api {
+			reverse_proxy 127.0.0.1:3000 {
+				import upstreams
+			}
+		}
+
+		handle /portal* {
+			reverse_proxy 127.0.0.1:3006 {
+				import upstreams
+			}
+		}
+
+		@app path /app* /plugins/zoom/*
+		handle @app {
+			reverse_proxy 127.0.0.1:3002 {
+				import upstreams
+			}
+		}
+
+		@notInStack path /login* /widget* /bi* /packs* /assets*
+		handle @notInStack {
+			respond "Service not part of the lightweight bunny stack" 502
+		}
+
+		handle {
+			respond 404
+		}
+	}
+}
+
+http://:80 {
+	import routes
+}
+
+https://:443 {
+	tls /etc/bunny-stack/certs/bunny.internal.crt /etc/bunny-stack/certs/bunny.internal.key
+	import routes
+}

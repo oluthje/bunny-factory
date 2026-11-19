@@ -1,0 +1,1 @@
+ALTER TABLE `runs` ADD `task` text DEFAULT 'implement' NOT NULL;

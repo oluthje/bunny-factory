@@ -1,0 +1,33 @@
+{
+  "name": "bunny-factory-orchestrator",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "INNGEST_DEV=1 node --env-file=../.env --watch src/server.ts",
+    "start": "node src/server.ts",
+    "inngest": "npx --yes inngest-cli@latest dev -u http://localhost:3000/api/inngest --no-discovery",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate"
+  },
+  "type": "module",
+  "dependencies": {
+    "@daytonaio/sdk": "^0.232.0",
+    "@linear/sdk": "^103.0.0",
+    "better-sqlite3": "^13.2.0",
+    "drizzle-orm": "^0.45.4",
+    "inngest": "^4.26.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  }
+}

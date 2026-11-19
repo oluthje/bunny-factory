@@ -1,0 +1,11 @@
+import { createServer } from "inngest/node";
+import { config } from "./config.ts";
+import { pollLinear } from "./functions/poll-linear.ts";
+import { runCancelled } from "./functions/run-cancelled.ts";
+import { runTicket } from "./functions/run-ticket.ts";
+import { inngest } from "./inngest.ts";
+
+const server = createServer({ client: inngest, functions: [pollLinear, runTicket, runCancelled] });
+server.listen(config.port, () => {
+  console.log(`bunny-factory orchestrator on :${config.port}/api/inngest (data: ${config.dataDir})`);
+});

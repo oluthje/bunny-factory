@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1.7
+# Warm snapshot: the base image (Dockerfile) plus the four repos at main, gems, node_modules,
+# Playwright's Chromium, and migrated + seeded dev databases and empty test databases.
+# Built on the Mac by build-snapshot.sh, never inside a sandbox: Tier 1/2 sandboxes can't reach
+# gems.graphql.pro, so a cold `bundle install` there fails.
+#
+# The GitHub PAT arrives only as the BuildKit secret `gh_token`. Git reads it as an auth header
+# from GIT_CONFIG_* variables that live for one RUN, so it is never written to .git/config,
+# ~/.gitconfig, bundler config or any layer. build-snapshot.sh checks the image for it.
+ARG BASE_IMAGE=bunny-agent-base:local
+FROM ${BASE_IMAGE}
+
+ENV BUNNY_ROOT=/home/daytona/bunny \
+    BUNDLE_PATH=/home/daytona/.bunny-stack/bundle
+USER daytona
+WORKDIR /home/daytona
+
+# Changes whenever a repo's main moves, so the clone layer isn't served from cache.
+ARG REPO_SHAS=unknown
+RUN --mount=type=secret,id=gh_token,mode=0444,required=true \
+    set -eu; echo "repos: $REPO_SHAS"; \
+    tok=$(cat /run/secrets/gh_token); [ -n "$tok" ]; \
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+      GIT_CONFIG_VALUE_0="Authorization: Basic $(printf 'x-access-token:%s' "$tok" | base64 -w0)"; unset tok; \
+    mkdir -p bunny; \
+    # Full clones: a blobless clone would need GitHub to fetch old blobs later, and run
+    # sandboxes hold no GitHub credential.
+    for r in api app portal kong; do git clone -q "https://github.com/bunnyapp/$r" "bunny/$r"; done; \
+    for r in api app portal; do [ -f "bunny/$r/.env" ] || cp "bunny/$r/.env.example" "bunny/$r/.env"; done
+
+# Ruby lives in /opt/ruby (root-owned), so the lockfile's bundler is installed as root.
+USER root
+RUN bv=$(awk '/^BUNDLED WITH/{getline; print $1}' /home/daytona/bunny/api/Gemfile.lock) \
+ && gem install -N bundler -v "$bv"
+USER daytona
+
+# Gems, including the private git gems (filter_parser, operationable, skills-internal) and
+# graphql-pro, whose credential is in the api's Gemfile.
+RUN --mount=type=secret,id=gh_token,mode=0444,required=true \
+    set -eu; \
+    tok=$(cat /run/secrets/gh_token); [ -n "$tok" ]; \
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+      GIT_CONFIG_VALUE_0="Authorization: Basic $(printf 'x-access-token:%s' "$tok" | base64 -w0)"; unset tok; \
+    cd bunny/api && bundle install --jobs 6 --quiet
+
+# node_modules (all @bunnyapp packages are public on npm) and the Chromium build that app's
+# pinned Playwright expects (vitest browser mode for test:stories).
+RUN set -eu; for r in app portal; do \
+      (cd "bunny/$r" && { npm ci --no-audit --no-fund --loglevel=error \
+        || npm install --no-audit --no-fund --loglevel=error; }); \
+    done \
+ && cd bunny/app && npx playwright install chromium chromium-headless-shell \
+ && rm -rf /home/daytona/.npm/_cacache
+
+# Databases: dev (schema, seeds, migrations, CORS origins, via bunny-stack setup, which finds
+# repos, gems and node_modules already in place) and test (schema only). Postgres is stopped
+# cleanly so the data directory in the layer is consistent.
+USER root
+RUN set -eu; bunny-infra start \
+ && sudo -u daytona -H bash -lc 'bunny-stack setup \
+      && bunny-stack run api env RAILS_ENV=test bin/rails db:prepare' \
+ && bunny-infra stop \
+ && rm -rf /home/daytona/bunny/.stack/logs/* /home/daytona/bunny/.stack/pids/* /var/log/bunny-stack/*

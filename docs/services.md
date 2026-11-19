@@ -9,10 +9,10 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 | Slot                   | Choice                                                                                             |
 | ---------------------- | -------------------------------------------------------------------------------------------------- |
 | Ticket tracker         | Linear, workspace `bunnyinc`, team `REC`                                                           |
-| Ticket source          | Deferred. Humans adding the `factory` label are the only source for now                            |
+| Ticket source          | Deferred. Oscar adding an `oscar-factory:<task>` label is the only source for now                         |
 | Git host               | GitHub, `bunnyapp/{api,app,portal,kong}`                                                           |
 | Orchestrator           | Inngest Cloud. Function code on Fly.io: one Node service, one machine. State in SQLite on a Fly volume, via Drizzle |
-| Runner                 | Daytona: a native, no-Docker warm snapshot built from `~/development/daytona-setup`. One ephemeral sandbox per run |
+| Runner                 | Daytona: a native, no-Docker warm snapshot built from `runner/` in this repo. One ephemeral sandbox per run |
 | Harness                | Headless Claude Code (`claude -p`) with Playwright MCP                                             |
 | Observability platform | None yet: the Inngest dashboard, run artifacts on the Fly volume, screenshots on the Linear ticket  |
 
@@ -37,7 +37,8 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
    - GitHub-triggered runs stay switched off until Linear-triggered runs have earned trust.
 9. **Linear events are polled.** You are not a workspace admin, so you can't add webhooks.
    - An Inngest cron runs every 1–2 minutes on `updatedAt` cursors.
-   - The **`factory` label** opts a ticket in.
+   - A ticket opts in only when it has an **`oscar-factory:<task>` label** (today only `oscar-factory:implement`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
+   - While a run works on a ticket, the factory adds **`oscar-factory:in-progress`**, and removes it when the run finishes, fails or is stopped. The poller ignores it when choosing a task.
    - Every factory comment carries a marker, so the pollers skip the factory's own comments.
 10. **The factory's state lives in SQLite on a Fly volume**, with one machine. It holds:
     - the poll cursors and last-seen PR state
