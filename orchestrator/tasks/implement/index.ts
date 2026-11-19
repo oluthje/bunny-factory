@@ -25,7 +25,7 @@ export const implement: Task = {
     "code-review",
     "pr",
   ],
-  docs: [],
+  docs: ["pr-guide.md"], // read at step 7, with the pr skill
   browser: true,
   branch: "optional",
   timeLimitMinutes: null,
