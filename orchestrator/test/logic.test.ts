@@ -27,7 +27,7 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
 });
 
 describe("selectNewTickets", () => {
-  it("drops tickets that already have a run", () => {
+  it("drops tickets that are busy", () => {
     const a = ticket({ id: "a" });
     const b = ticket({ id: "b" });
     expect(selectNewTickets([a, b], (t) => t.id === "a")).toEqual([b]);

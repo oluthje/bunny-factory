@@ -116,6 +116,10 @@ describe("review comments schema", () => {
     expect(item.additionalProperties).toBe(false);
   });
 
+  it("has no $schema key, which makes Claude Code reject the whole schema", () => {
+    expect(JSON.parse(reviewCommentsJsonSchema(repos))).not.toHaveProperty("$schema");
+  });
+
   it("accepts the CLI's structured output", () => {
     const comments = [{ repo: "api", path: "a.rb", line: 3, body: "Rename this." }];
     expect(parseReviewComments(result({ comments }), repos)).toEqual({ ok: true, comments });
@@ -124,6 +128,10 @@ describe("review comments schema", () => {
 
   it("rejects a missing, garbled or off-schema result", () => {
     expect(parseReviewComments("", repos)).toMatchObject({ ok: false, error: /no result/ });
+    expect(parseReviewComments("", repos, "Error: bad flag\n")).toEqual({
+      ok: false,
+      error: "The extraction pass wrote no result: Error: bad flag",
+    });
     expect(parseReviewComments("{not json", repos)).toMatchObject({ ok: false, error: /not JSON/ });
     expect(parseReviewComments(JSON.stringify({ type: "result", subtype: "error_max_turns" }), repos)).toEqual({
       ok: false,

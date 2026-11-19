@@ -1,6 +1,7 @@
 // The review's machine-readable parts: the verdict in review.md, and the findings it left as
 // inline comments. Pure: no I/O, so it is unit-tested in test/review.test.ts.
 import { z } from "zod/v4";
+import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "./structured.ts";
 
 export const VERDICTS = ["PASS", "CHANGES REQUESTED"] as const;
 export type AxisVerdict = (typeof VERDICTS)[number];
@@ -57,47 +58,24 @@ export function reviewCommentsSchema(repos: readonly [string, ...string[]]) {
 export type ReviewComments = z.infer<ReturnType<typeof reviewCommentsSchema>>;
 export type InlineComment = ReviewComments["comments"][number];
 
-/** The JSON Schema handed to `claude --json-schema`: the zod schema is the one place the shape lives. */
+/** The JSON Schema handed to `claude --json-schema`. */
 export function reviewCommentsJsonSchema(repos: readonly [string, ...string[]]): string {
-  return JSON.stringify(z.toJSONSchema(reviewCommentsSchema(repos)));
+  return toCliJsonSchema(reviewCommentsSchema(repos));
 }
 
-/**
- * The comments from the extraction pass's `claude --output-format json` result, validated again
- * here: the CLI checks the shape, and this also catches a missing or garbled result.
- */
+/** The comments from the extraction pass's `claude --output-format json` result, validated again here. */
 export function parseReviewComments(
   resultJson: string,
   repos: readonly [string, ...string[]],
+  stderr = "",
 ): { ok: true; comments: InlineComment[] } | { ok: false; error: string } {
-  if (!resultJson.trim()) return { ok: false, error: "The extraction pass wrote no result." };
-  let result: unknown;
-  try {
-    result = JSON.parse(resultJson);
-  } catch {
-    return { ok: false, error: "The extraction pass's result is not JSON." };
-  }
-  const { structured_output: output, subtype } = (result ?? {}) as { structured_output?: unknown; subtype?: unknown };
-  if (output === undefined) {
-    return { ok: false, error: `The extraction pass returned no structured output${typeof subtype === "string" ? ` (${subtype})` : ""}.` };
-  }
-  const parsed = reviewCommentsSchema(repos).safeParse(output);
-  if (!parsed.success) return { ok: false, error: `The extraction pass's comments are invalid: ${z.prettifyError(parsed.error)}` };
-  return { ok: true, comments: parsed.data.comments };
+  const parsed = parseStructuredOutput(resultJson, reviewCommentsSchema(repos), { pass: "The extraction pass", noun: "comments" }, stderr);
+  return parsed.ok ? { ok: true, comments: parsed.value.comments } : parsed;
 }
-
-/** Extra extraction attempts after the first, each fed the last attempt's error. */
-export const EXTRACT_RETRIES = 2;
 
 /** The prompt for a retried extraction: the same session, told what was wrong with its last answer. */
 export function extractionRetryPrompt(error: string): string {
-  return [
-    "Your last answer couldn't be used:",
-    "",
-    error,
-    "",
-    "Answer again with the findings that point at a line, in the same structure. Answer from what you have already read, with no tool calls.",
-  ].join("\n");
+  return structuredRetryPrompt(error, "Answer again with the findings that point at a line, in the same structure.");
 }
 
 /**

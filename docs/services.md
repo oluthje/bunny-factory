@@ -38,7 +38,12 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 9. **Linear events are polled.** You are not a workspace admin, so you can't add webhooks.
    - An Inngest cron runs every 1–2 minutes on `updatedAt` cursors.
    - A ticket opts in only when it has an **`oscar-factory:<task>` label** (today only `oscar-factory:implement`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
-   - While a run works on a ticket, the factory adds **`oscar-factory:in-progress`**, and removes it when the run finishes, fails or is stopped. The poller ignores it when choosing a task.
+   - **The labels are the ticket's state**, and `orchestrator/src/transitions.ts` is the one place that changes them:
+     - **Pickup.** The poller takes the task label off and adds **`oscar-factory:in-progress`**. Adding the task label again asks for another run.
+     - **A run ends.** The factory removes in-progress. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. Today the chain is one step: an `implement` run that pushed commits hands off to `oscar-factory:review`.
+     - **The poller is the only thing that starts runs.** A ticket with a run queued or working waits, and the run's end brings it back.
+     - **Loop cap:** 5 runs of one task per ticket. Past it, the poller refuses the run and the ticket waits on Oscar.
+     - The poller ignores in-progress and human-needed when choosing a task.
    - Every factory comment carries a marker, so the pollers skip the factory's own comments.
 10. **The factory's state lives in SQLite on a Fly volume**, with one machine. It holds:
     - the poll cursors and last-seen PR state

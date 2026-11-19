@@ -16,11 +16,26 @@ export type ChangedRepo = { repo: string; commits: number };
 /** Every Linear comment the factory posts carries this marker, so pollers can skip them. */
 export const COMMENT_MARKER = "🏭 oscar-factory";
 
-/** Tickets on this page that have no run yet for the task they ask for, without duplicates. */
-export function selectNewTickets(issues: Ticket[], hasRun: (ticket: Ticket) => boolean): Ticket[] {
+/**
+ * Everything the factory posts on GitHub carries this marker. The factory posts as Oscar (the
+ * PAT's owner), so the author alone can't tell Oscar's own comments from the factory's.
+ */
+export const GITHUB_MARKER = "<!-- oscar-factory -->";
+
+export function markForGithub(body: string): string {
+  return `${body.trimEnd()}\n\n${GITHUB_MARKER}`;
+}
+
+/** Posted by the factory: the marker, or the footer of a PR body or review from before it. */
+export function isFactoryGithubBody(body: string): boolean {
+  return body.includes(GITHUB_MARKER) || /(?:Opened|Posted) by Oscar's factory/.test(body);
+}
+
+/** Tickets on this page the poller may start a run on, without duplicates. `busy` holds a ticket back. */
+export function selectNewTickets(issues: Ticket[], busy: (ticket: Ticket) => boolean): Ticket[] {
   const seen = new Set<string>();
   return issues.filter((t) => {
-    if (seen.has(t.id) || hasRun(t)) return false;
+    if (seen.has(t.id) || busy(t)) return false;
     seen.add(t.id);
     return true;
   });
@@ -64,30 +79,31 @@ export function prTitle(t: Ticket): string {
 
 /** The agent's PR body (from the `pr` skill), framed with the ticket link and run id. */
 export function prBody(t: Ticket, agentBody: string, runId: string): string {
-  return [
+  return markForGithub([
     `Implements [${t.identifier}](${t.url}).`,
     "",
     agentBody.trim() || "_The agent wrote no PR body._",
     "",
     "---",
     `Opened by Oscar's factory (run \`${runId}\`). Needs a human review before merging.`,
-  ].join("\n");
+  ].join("\n"));
 }
 
 /** The agent's review, framed for a PR comment with the ticket link and run id. */
 export function reviewComment(t: Ticket, review: string, runId: string): string {
-  return [
+  return markForGithub([
     `Factory review of [${t.identifier}](${t.url}).`,
     "",
     review.trim(),
     "",
     "---",
-    `Posted by Oscar's factory (run \`${runId}\`). Comment only: no approval or change request.`,
-  ].join("\n");
+    `Posted by Oscar's factory (run \`${runId}\`). Its fixes are pushed as commits; the rest are comments, with no approval or change request.`,
+  ].join("\n"));
 }
 
-export function linearComment(text: string, runId: string): string {
-  return `${COMMENT_MARKER} · run \`${runId}\`\n\n${text}`;
+/** A factory comment for Linear: the marker, the run it's about if any, then the text. */
+export function linearComment(text: string, runId: string | null): string {
+  return `${runId ? `${COMMENT_MARKER} · run \`${runId}\`` : COMMENT_MARKER}\n\n${text}`;
 }
 
 export function isFactoryComment(body: string): boolean {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, max, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { config } from "../config.ts";
@@ -26,11 +26,26 @@ export function setCursor(key: string, value: string): void {
   db.insert(cursors).values({ key, value }).onConflictDoUpdate({ target: cursors.key, set: { value } }).run();
 }
 
-/** One run per ticket per task: a ticket implemented once can still be reviewed once. */
-export function ticketHasRun(ticketId: string, task: string): boolean {
+/** A run on the ticket is queued or working. A ticket has one run at a time. */
+export function ticketRunInFlight(ticketId: string): boolean {
   return (
-    db.select({ id: runs.id }).from(runs).where(and(eq(runs.ticketId, ticketId), eq(runs.task, task))).get() !==
-    undefined
+    db.select({ id: runs.id }).from(runs)
+      .where(and(eq(runs.ticketId, ticketId), inArray(runs.status, ["requested", "running"])))
+      .get() !== undefined
+  );
+}
+
+/** How many runs of the task the ticket has had, for the loop cap. */
+export function countRuns(ticketId: string, task: string): number {
+  return db.select({ n: count() }).from(runs).where(and(eq(runs.ticketId, ticketId), eq(runs.task, task))).get()?.n ?? 0;
+}
+
+/** When the ticket's latest finished run, other than this one, finished; null if none has. */
+export function lastFinishedAt(ticketId: string, exceptRunId: string): string | null {
+  return (
+    db.select({ at: max(runs.finishedAt) }).from(runs)
+      .where(and(eq(runs.ticketId, ticketId), ne(runs.id, exceptRunId), isNotNull(runs.finishedAt)))
+      .get()?.at ?? null
   );
 }
 
@@ -41,6 +56,14 @@ export function recordRun(args: { ticketId: string; ticketIdentifier: string; ta
     .values({ id, ...args, status: "requested", createdAt: new Date().toISOString() })
     .run();
   return id;
+}
+
+/** Marks a run finished unless it already is: a backstop for a run that died before recording its end. */
+export function closeIfOpen(id: string, status: "failed" | "cancelled"): void {
+  db.update(runs)
+    .set({ status, finishedAt: new Date().toISOString() })
+    .where(and(eq(runs.id, id), inArray(runs.status, ["requested", "running"])))
+    .run();
 }
 
 export function updateRun(id: string, set: Partial<RunRow>): void {

@@ -1,4 +1,5 @@
 import { config } from "./config.ts";
+import type { PrComment, ReviewThread } from "./feedback.ts";
 
 async function gh<T>(method: string, pathname: string, body?: unknown): Promise<T> {
   const res = await fetch(`https://api.github.com${pathname}`, {
@@ -84,4 +85,83 @@ export async function getPrBody(url: string): Promise<string> {
 export async function setPrBody(url: string, body: string): Promise<void> {
   const { repo, number } = parsePrUrl(url);
   await gh("PATCH", `/repos/${config.githubOwner}/${repo}/pulls/${number}`, { body });
+}
+
+async function graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const res = await gh<{ data?: T; errors?: { message: string }[] }>("POST", "/graphql", { query, variables });
+  if (res.errors?.length || !res.data) throw new Error(`GitHub GraphQL: ${res.errors?.map((e) => e.message).join("; ") ?? "no data"}`);
+  return res.data;
+}
+
+/** The PAT owner's login: Oscar, and also the author of everything the factory posts. */
+export async function viewerLogin(): Promise<string> {
+  return (await gh<{ login: string }>("GET", "/user")).login;
+}
+
+/** The PR's review threads, oldest comment first. Up to 100 threads of 100 comments each. */
+export async function reviewThreads(url: string): Promise<ReviewThread[]> {
+  const { repo, number } = parsePrUrl(url);
+  const data = await graphql<{
+    repository: {
+      pullRequest: {
+        reviewThreads: {
+          nodes: {
+            id: string;
+            isResolved: boolean;
+            path: string;
+            line: number | null;
+            comments: { nodes: { body: string; createdAt: string; author: { login: string } | null }[] };
+          }[];
+        };
+      };
+    };
+  }>(
+    `query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100) {
+            nodes { id isResolved path line comments(first: 100) { nodes { body createdAt author { login } } } }
+          }
+        }
+      }
+    }`,
+    { owner: config.githubOwner, repo, number },
+  );
+  return data.repository.pullRequest.reviewThreads.nodes.map((t) => ({
+    id: t.id,
+    repo,
+    path: t.path,
+    line: t.line,
+    isResolved: t.isResolved,
+    comments: t.comments.nodes.map((c) => ({ author: c.author?.login ?? "ghost", body: c.body, createdAt: c.createdAt })),
+  }));
+}
+
+/** The PR's conversation comments (not review threads), oldest first. Up to 100. */
+export async function prComments(url: string): Promise<PrComment[]> {
+  const { repo, number } = parsePrUrl(url);
+  const list = await gh<{ body: string | null; created_at: string; user: { login: string } | null }[]>(
+    "GET",
+    `/repos/${config.githubOwner}/${repo}/issues/${number}/comments?per_page=100`,
+  );
+  return list.map((c) => ({ repo, author: c.user?.login ?? "ghost", body: c.body ?? "", createdAt: c.created_at }));
+}
+
+export async function replyToThread(threadId: string, body: string): Promise<void> {
+  await graphql(
+    `mutation($id: ID!, $body: String!) {
+      addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $id, body: $body }) { comment { id } }
+    }`,
+    { id: threadId, body },
+  );
+}
+
+/** Marks a draft PR ready for review, once review has been through it; a no-op when it already is. */
+export async function markReady(url: string): Promise<void> {
+  const { repo, number } = parsePrUrl(url);
+  const pr = await gh<{ node_id: string; draft: boolean }>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`);
+  if (!pr.draft) return;
+  await graphql(`mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }`, {
+    id: pr.node_id,
+  });
 }

@@ -1,7 +1,9 @@
 import { LinearClient } from "@linear/sdk";
 import { config } from "./config.ts";
+import type { TicketComment } from "./feedback.ts";
 import type { Ticket } from "./logic.ts";
-import { IN_PROGRESS_LABEL, LABEL_PREFIX } from "./tasks.ts";
+import { LABEL_PREFIX } from "./tasks.ts";
+import type { LabelChange } from "./transitions.ts";
 
 let client: LinearClient | undefined;
 const linear = () => (client ??= new LinearClient({ apiKey: config.linearApiKey() }));
@@ -54,13 +56,30 @@ async function labelId(name: string): Promise<string> {
   return id;
 }
 
-/** Adds or removes the in-progress label. Removing a label the ticket lacks is not an error. */
-export async function setInProgress(ticketId: string, on: boolean): Promise<void> {
-  const id = await labelId(IN_PROGRESS_LABEL);
-  const issue = await linear().issue(ticketId);
-  const has = (await issue.labels()).nodes.some((l) => l.id === id);
-  if (on && !has) await linear().issueAddLabel(ticketId, id);
-  if (!on && has) await linear().issueRemoveLabel(ticketId, id);
+/**
+ * Applies a transition from transitions.ts in one write, leaving the ticket's other labels alone.
+ * Idempotent: adds only what's missing and removes only what's there.
+ */
+export async function applyLabels(ticketId: string, change: LabelChange): Promise<void> {
+  const [add, remove] = await Promise.all([Promise.all(change.add.map(labelId)), Promise.all(change.remove.map(labelId))]);
+  const has = new Set((await (await linear().issue(ticketId)).labels()).nodes.map((l) => l.id));
+  const addedLabelIds = add.filter((id) => !has.has(id));
+  const removedLabelIds = remove.filter((id) => has.has(id));
+  if (addedLabelIds.length || removedLabelIds.length) await linear().updateIssue(ticketId, { addedLabelIds, removedLabelIds });
+}
+
+/** The ticket's comments, oldest first, each marked if the API key's owner (Oscar) wrote it. Up to 100. */
+export async function ticketComments(ticketId: string): Promise<TicketComment[]> {
+  const data = await linear().client.request<
+    { issue: { comments: { nodes: { body: string; createdAt: string; user: { isMe: boolean } | null }[] } } },
+    { id: string }
+  >(
+    `query($id: String!) { issue(id: $id) { comments(first: 100) { nodes { body createdAt user { isMe } } } } }`,
+    { id: ticketId },
+  );
+  return data.issue.comments.nodes
+    .map((c) => ({ body: c.body, createdAt: c.createdAt, isMe: c.user?.isMe ?? false }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 /** Uploads a file to Linear's storage and returns its asset URL (opens for workspace members). */
