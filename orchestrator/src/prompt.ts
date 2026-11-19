@@ -1,12 +1,12 @@
 // The run prompt: tasks/<task>/prompt.md filled in for one ticket. The engine fills what every task
-// shares (the ticket, the evidence dir, the time limit); the task's `prepare` supplies the rest.
+// shares (the ticket, the evidence dir, the run dir, the time limit); the task's `prepare` supplies the rest.
 import fs from "node:fs";
 import path from "node:path";
 import type { TaskName } from "../tasks/index.ts";
 import type { Ticket } from "./logic.ts";
-import { EVIDENCE_DIR } from "./runner-paths.ts";
+import { EVIDENCE_DIR, RUN_DIR } from "./runner-paths.ts";
 
-/** Each task's folder: its prompt.md and extract.md reach the runner. */
+/** Each task's folder: its prompt.md, extract.md and docs reach the runner. */
 export const TASKS_DIR = path.join(import.meta.dirname, "../tasks");
 /** What every run uploads whatever its task: the skills (only the task's own) and Claude Code's settings. */
 export const RUNNER_FILES_DIR = path.join(import.meta.dirname, "../runner-files");
@@ -39,6 +39,7 @@ export function buildPrompt(args: { task: TaskName; ticket: Ticket; timeLimitMin
     description: ticket.description.trim() || "(no description)",
     branch: ticket.branchName,
     evidenceDir: EVIDENCE_DIR,
+    runDir: RUN_DIR,
     timeLimitMinutes: String(timeLimitMinutes),
   });
 }

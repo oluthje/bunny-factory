@@ -20,6 +20,7 @@ import {
 
 export const review: Task = {
   skills: ["oscar-factory-rules", "oscar-factory-stack", "code-review"],
+  docs: [],
   browser: false,
   branch: "required",
   timeLimitMinutes: null,

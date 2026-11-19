@@ -8,6 +8,8 @@ tasks/
 └── <task>/
     ├── prompt.md       the run's one entry point; reaches the runner
     ├── extract.md      the structured pass's prompt; reaches the runner
+    ├── *.md            docs the prompt points at, listed in the task's `docs`; reach the runner
+                        at {{runDir}}/<file>, read when their step comes up
     ├── index.ts        the task: its skills, browser, branch, time limit, and its part of the run
     │                   (inputs before it, the structured pass, what it does with the work, what it hands off to)
     ├── prompt.ts       its own placeholders in prompt.md (pure)

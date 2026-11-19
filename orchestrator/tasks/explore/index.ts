@@ -12,6 +12,7 @@ import { FINDINGS, promptVars, renderThread } from "./prompt.ts";
 
 export const explore: Task = {
   skills: ["oscar-factory-rules", "oscar-factory-stack"],
+  docs: [],
   browser: true,
   branch: "none",
   timeLimitMinutes: 20,

@@ -25,6 +25,7 @@ export const implement: Task = {
     "code-review",
     "pr",
   ],
+  docs: [],
   browser: true,
   branch: "optional",
   timeLimitMinutes: null,

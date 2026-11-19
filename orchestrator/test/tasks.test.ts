@@ -100,6 +100,15 @@ describe("runner files", () => {
     }
   });
 
+  it("ships every doc a task lists, and its prompt points at each one", () => {
+    for (const task of tasks) {
+      for (const doc of TASKS[task].docs) {
+        expect(fs.existsSync(path.join(TASKS_DIR, task, doc)), `${task}: ${doc}`).toBe(true);
+        expect(promptTemplate(task), `${task}: ${doc}`).toContain(`{{runDir}}/${doc}`);
+      }
+    }
+  });
+
   it("has an extract prompt for every task, for its structured pass", () => {
     for (const task of tasks) expect(fs.existsSync(path.join(TASKS_DIR, task, "extract.md")), task).toBe(true);
   });
