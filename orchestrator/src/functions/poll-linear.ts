@@ -2,7 +2,7 @@ import { anyRunInFlight, countRuns, getCursor, recordRun, setCursor, ticketRunIn
 import { applyLabels, comment, fetchOptedInTickets } from "../linear.ts";
 import { cursorAfterPoll, linearComment, selectNewTickets } from "../logic.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
-import { taskFromLabels, taskLabel } from "../tasks.ts";
+import { TASKS, taskFromLabels, taskLabel } from "../tasks.ts";
 import { LOOP_CAP, pickedUp, refused } from "../transitions.ts";
 
 const CURSOR = "linear.updatedAt";
@@ -69,7 +69,7 @@ export const pollLinear = inngest.createFunction(
         comment(
           ticket.id,
           linearComment(
-            `Picked up \`${taskLabel(task)}\`. I'll comment again with the ${task === "review" ? "review" : "PR"} or the failure.`,
+            `Picked up \`${taskLabel(task)}\`. I'll comment again with ${TASKS[task].delivers} or the failure.`,
             runId,
           ),
         ),

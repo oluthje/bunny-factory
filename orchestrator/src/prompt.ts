@@ -1,7 +1,6 @@
 // The run prompt: sandbox/tasks/<task>/prompt.md filled in for one ticket. File I/O kept apart from tasks.ts.
 import fs from "node:fs";
 import path from "node:path";
-import { config } from "./config.ts";
 import { GITHUB_MARKER, type Ticket } from "./logic.ts";
 import { renderTemplate, type TaskName } from "./tasks.ts";
 
@@ -23,10 +22,11 @@ export function buildPrompt(args: {
   evidenceDir: string;
   prBodyPath: string;
   reviewPath: string;
+  timeLimitMinutes: number;
   update: { feedback: string } | null;
   prBody: string | null;
 }): string {
-  const { task, ticket, evidenceDir, prBodyPath, reviewPath, update, prBody } = args;
+  const { task, ticket, evidenceDir, prBodyPath, reviewPath, timeLimitMinutes, update, prBody } = args;
   return renderTemplate(fs.readFileSync(path.join(TASKS_DIR, task, "prompt.md"), "utf8"), {
     identifier: ticket.identifier,
     title: ticket.title,
@@ -36,7 +36,7 @@ export function buildPrompt(args: {
     evidenceDir,
     prBodyPath,
     reviewPath,
-    timeLimitMinutes: String(config.claudeTimeoutMinutes),
+    timeLimitMinutes: String(timeLimitMinutes),
     mode: update ? "update" : "create",
     start: update
       ? "checked out at the PR's current head in every repo that has it, and from an up-to-date `main` in the rest"

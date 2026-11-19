@@ -13,7 +13,7 @@ sandbox/
 - `DISABLE_AUTOUPDATER`: the snapshot pins Claude Code's version; a run doesn't update itself.
 - `BASH_DEFAULT_TIMEOUT_MS` (10 min) and `BASH_MAX_TIMEOUT_MS` (30 min): spec runs outlast the 2-minute default.
 
-Permissions stay on the command line (`--dangerously-skip-permissions` in `src/functions/run-ticket.ts`), and the Playwright MCP server stays in `--mcp-config`: Claude Code doesn't read MCP servers from `settings.json`.
+Permissions stay on the command line (`--dangerously-skip-permissions` in `src/functions/run-ticket.ts`), and the Playwright MCP server stays in `--mcp-config`, passed only to tasks with `browser: true` in `TASKS`: Claude Code doesn't read MCP servers from `settings.json`.
 
 **The prompt is the one place to read a task.** It lists every skill call, in order, always with the Skill tool except for a skill marked `disable-model-invocation`, which it reads by path (see the root `CLAUDE.md`; today only `implement`), and ends with the run's finish line. No skill tells the agent to go and read another skill; a skill that calls another (like `implement` → `tdd`) is an upstream copy, and the prompt names those too.
 
@@ -99,7 +99,7 @@ The `oscar-factory-` skills are ours. The others are **read-only copies**: refre
 
 ## Adding a task or a skill
 
-- **A task**: add `tasks/<task>/prompt.md`, its entry in `TASKS` in `src/tasks.ts`, its row in `CHAIN` in `src/transitions.ts`, its Linear label, and its tree above.
+- **A task**: add `tasks/<task>/prompt.md`, its entry in `TASKS` in `src/tasks.ts` (skills, browser, branch, time limit), its run module `src/runs/<task>.ts` (inputs before the run, structured pass, what it does with the work) listed in `TASK_RUNS` in `src/functions/run-ticket.ts`, its row in `CHAIN` in `src/transitions.ts`, its Linear label, and its tree above.
 - **A skill**: add `skills/<skill>/SKILL.md`, call it from a prompt's steps, list it under that task in `src/tasks.ts`, and add it to the tree above.
 
 `test/tasks.test.ts` checks that every shipped skill has a `SKILL.md`, and that each prompt starts with `oscar-factory-rules` and names every skill its task ships.

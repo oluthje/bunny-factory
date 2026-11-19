@@ -53,6 +53,16 @@ describe("skillsFor", () => {
   });
 });
 
+describe("TASKS", () => {
+  it("gives implement the browser and lets it create or update the branch", () => {
+    expect(TASKS.implement).toMatchObject({ browser: true, branch: "optional", delivers: "the PR" });
+  });
+
+  it("gives review no browser, and needs the branch on GitHub", () => {
+    expect(TASKS.review).toMatchObject({ browser: false, branch: "required", delivers: "the review" });
+  });
+});
+
 describe("renderTemplate", () => {
   it("fills every placeholder", () => {
     expect(renderTemplate("{{a}} and {{ b }}", { a: "1", b: "2" })).toBe("1 and 2");
@@ -84,6 +94,7 @@ describe("sandbox files", () => {
       evidenceDir: "/home/daytona/artifacts/evidence",
       prBodyPath: "/home/daytona/artifacts/pr-body.md",
       reviewPath: "/home/daytona/artifacts/review.md",
+      timeLimitMinutes: 60,
     });
 
   it("has a prompt for every task, rendered with no placeholder left", () => {

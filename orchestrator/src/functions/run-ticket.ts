@@ -1,8 +1,7 @@
 // One run of a task on a ticket. Ports runner/sandbox.sh into Inngest steps.
-// - `implement` creates or updates: with no branch on GitHub it branches from main and opens draft
-//   PRs; with one, it builds on the branch with Oscar's feedback and replies on Oscar's review threads.
-// - `review` fixes what it's sure of, pushes that, posts the rest as a GitHub review and marks the
-//   PRs ready.
+// This file is what every run shares: bundles in, the sandbox, catch-up, Claude, the structured-output
+// pass, the work out and pushed. What a task adds before the run and does with its work is in
+// runs/<task>.ts; what differs in between (browser, branch, time limit) is its entry in TASKS.
 // Every ending applies a transition from transitions.ts to the ticket's labels; that is how one
 // task hands off to the next. Every step is short; the long parts (catch-up, Claude, the
 // structured-output pass) run in background sessions that we poll.
@@ -11,48 +10,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.ts";
-import { closeIfOpen, lastFinishedAt, updateRun } from "../db/index.ts";
-import { publishEvidence } from "../evidence.ts";
-import { renderFeedback } from "../feedback.ts";
-import { branchDiff, bundleBase, fetchBranch, importAndPush, refreshMirror } from "../git.ts";
-import {
-  commitIdentity,
-  findOpenPr,
-  getPrBody,
-  markReady,
-  openOrFindPr,
-  postReview,
-  prComments,
-  replyToThread,
-  reviewThreads,
-  setPrBody,
-  viewerLogin,
-} from "../github.ts";
+import { closeIfOpen, updateRun } from "../db/index.ts";
+import { bundleBase, fetchBranch, importAndPush, refreshMirror } from "../git.ts";
+import { commitIdentity, findOpenPr } from "../github.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
-import { applyLabels, comment, ticketComments } from "../linear.ts";
-import {
-  linearComment,
-  linkEvidence,
-  markForGithub,
-  parseChangedRepos,
-  prBody,
-  prTitle,
-  reviewComment,
-  sandboxName,
-  shQuote,
-  type Ticket,
-} from "../logic.ts";
+import { applyLabels } from "../linear.ts";
+import { parseChangedRepos, sandboxName, shQuote, type Ticket } from "../logic.ts";
 import { buildPrompt, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../prompt.ts";
-import { parseThreadReplies, replyBody, replyRetryPrompt, threadRepliesJsonSchema } from "../replies.ts";
-import {
-  diffLines,
-  extractionRetryPrompt,
-  parseReviewComments,
-  parseVerdict,
-  placeComments,
-  reviewCommentsJsonSchema,
-  verdictLine,
-} from "../review.ts";
+import { implement } from "../runs/implement.ts";
+import { review } from "../runs/review.ts";
+import { EVIDENCE_DIR, finish, type Pass, PR_BODY, REVIEW, type TaskRun } from "../runs/shared.ts";
 import {
   ARTIFACTS,
   HOME,
@@ -67,13 +34,13 @@ import {
   upload,
 } from "../sandbox.ts";
 import { STRUCTURED_RETRIES } from "../structured.ts";
-import { skillsFor, taskLabel, type TaskName } from "../tasks.ts";
-import { finished, nextTask, type RunEnd } from "../transitions.ts";
+import { skillsFor, TASKS, type TaskName } from "../tasks.ts";
+import { finished } from "../transitions.ts";
 
-const EVIDENCE_DIR = `${ARTIFACTS}/evidence`;
-const PR_BODY = `${ARTIFACTS}/pr-body.md`;
-const REVIEW = `${ARTIFACTS}/review.md`;
-/** The structured-output pass's `claude --output-format json` result: review's inline comments, or implement's thread replies. */
+/** Each task's part of the run. */
+const TASK_RUNS: Record<TaskName, TaskRun> = { implement, review };
+
+/** The structured-output pass's `claude --output-format json` result. */
 const PASS_OUT = `${ARTIFACTS}/structured-output.json`;
 const PASS_SCHEMA = `${RUN_DIR}/structured-output.schema.json`;
 /** How long the structured-output pass may take: it only answers from the session, with no tools. */
@@ -103,22 +70,6 @@ async function packSkills(task: TaskName, outFile: string): Promise<void> {
   await promisify(execFile)("tar", ["czf", outFile, "-C", SKILLS_DIR, ...skillsFor(task)]);
 }
 
-const prRef = (u: string) => `[${u.replace("https://github.com/", "").replace("/pull/", "#")}](${u})`;
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-/** The end of the run's Linear report: what the ticket's labels now ask for. */
-function handoffLine(end: RunEnd): string {
-  const next = nextTask(end);
-  return next ? `Handing off: \`${taskLabel(next)}\` queued.` : "Waiting on Oscar.";
-}
-
-/** Records the run's end, then moves the ticket's labels on. The record goes first: the poller only picks up a ticket with no run in flight. */
-async function finish(runId: string, ticketId: string, end: RunEnd, text: string, record: Parameters<typeof updateRun>[1]) {
-  updateRun(runId, { ...record, status: end.status, finishedAt: new Date().toISOString() });
-  await comment(ticketId, linearComment(`${text}\n\n${handoffLine(end)}`, runId));
-  await applyLabels(ticketId, finished(end));
-}
-
 export const runTicket = inngest.createFunction(
   {
     id: "run-ticket",
@@ -142,13 +93,14 @@ export const runTicket = inngest.createFunction(
   async ({ event, step }) => {
     const { runId, ticket, task } = event.data as RunRequested;
     const branch = ticket.branchName;
-    const reviewing = task === "review";
+    const settings = TASKS[task];
+    const timeLimitMinutes = settings.timeLimitMinutes ?? config.claudeTimeoutMinutes;
     const localDir = runDirFor(runId);
     let sandboxId: string | null = null;
 
     try {
       // 1. Bundles of an up-to-date main, built from the host's mirrors, plus the ticket's branch
-      // from every repo that has it on GitHub. A review needs it; an implement run that finds it updates.
+      // from every repo that has it on GitHub.
       const { baseShas, heads } = await step.run("bundle-main", async () => {
         const shas: Record<string, string> = {};
         const found: Record<string, string> = {};
@@ -161,10 +113,9 @@ export const runTicket = inngest.createFunction(
         return { baseShas: shas, heads: found };
       });
       const onGitHub = Object.keys(heads);
-      if (reviewing && onGitHub.length === 0) {
-        throw new Error(`Nothing to review: no repo has the branch \`${branch}\` on GitHub.`);
+      if (settings.branch === "required" && onGitHub.length === 0) {
+        throw new Error(`Nothing to ${task}: no repo has the branch \`${branch}\` on GitHub.`);
       }
-      const updating = !reviewing && onGitHub.length > 0;
 
       // The open PR of each repo with the branch, looked up once: the run opens none until it ends.
       const openPrs = await step.run("find-open-prs", async () => {
@@ -175,50 +126,10 @@ export const runTicket = inngest.createFunction(
         }
         return found;
       });
-      const openUrls = Object.values(openPrs);
 
-      // 1b. An update's feedback, acted on with the ticket still the spec: Oscar's review threads
-      // waiting on the factory, PR comments and ticket comments. "New" means since the ticket's
-      // previous run finished.
-      const feedback = updating
-        ? await step.run("gather-feedback", async () => {
-            return renderFeedback({
-              threads: (await Promise.all(openUrls.map(reviewThreads))).flat(),
-              prComments: (await Promise.all(openUrls.map(prComments))).flat(),
-              ticketComments: await ticketComments(ticket.id),
-              since: lastFinishedAt(ticket.id, runId),
-              viewer: await viewerLogin(),
-            });
-          })
-        : null;
-      const handles = Object.keys(feedback?.handles ?? {});
-
-      // The structured-output pass, if the run has one: review's inline comments, or an update's
-      // thread replies. Each validator returns an error, or null when the output is good.
-      const pass = reviewing
-        ? {
-            schema: reviewCommentsJsonSchema(onGitHub as [string, ...string[]]),
-            validate: (text: string, stderr: string) => {
-              const parsed = parseReviewComments(text, onGitHub as [string, ...string[]], stderr);
-              return parsed.ok ? null : parsed.error;
-            },
-            retryPrompt: extractionRetryPrompt,
-          }
-        : handles.length > 0
-          ? {
-              schema: threadRepliesJsonSchema(handles as [string, ...string[]]),
-              validate: (text: string, stderr: string) => {
-                const parsed = parseThreadReplies(text, handles as [string, ...string[]], stderr);
-                return parsed.ok ? null : parsed.error;
-              },
-              retryPrompt: replyRetryPrompt,
-            }
-          : null;
-
-      // 1c. A review's context: the PR body, with the implementer's Decisions. Every repo's PR has
-      // the same body, so the first open one will do.
-      const reviewedPrBody =
-        reviewing && openUrls.length > 0 ? await step.run("fetch-pr-body", () => getPrBody(openUrls[0]!)) : null;
+      // 1b. The task's own inputs, gathered before the sandbox exists.
+      const prepared = await TASK_RUNS[task]({ step, runId, ticket, task, branch, localDir, timeLimitMinutes, heads, openPrs });
+      const { pass } = prepared;
 
       // 2. The sandbox. Looked up by name first so a retried step doesn't create a second one.
       sandboxId = await step.run("create-sandbox", async () => {
@@ -247,12 +158,12 @@ export const runTicket = inngest.createFunction(
           evidenceDir: EVIDENCE_DIR,
           prBodyPath: PR_BODY,
           reviewPath: REVIEW,
-          update: feedback ? { feedback: feedback.markdown } : null,
-          prBody: reviewedPrBody,
+          timeLimitMinutes,
+          ...prepared.prompt,
         });
         fs.writeFileSync(path.join(localDir, "prompt.md"), prompt);
         await upload(sb, Buffer.from(prompt), `${RUN_DIR}/prompt.md`);
-        if (!reviewing) await upload(sb, Buffer.from(JSON.stringify(MCP_CONFIG)), `${RUN_DIR}/mcp.json`);
+        if (settings.browser) await upload(sb, Buffer.from(JSON.stringify(MCP_CONFIG)), `${RUN_DIR}/mcp.json`);
         if (pass) {
           await upload(sb, Buffer.from(pass.schema), PASS_SCHEMA);
           await upload(sb, path.join(TASKS_DIR, task, "extract.md"), `${RUN_DIR}/extract.md`);
@@ -304,9 +215,8 @@ export const runTicket = inngest.createFunction(
         updateRun(runId, { catchUpSeconds: Math.round((Date.now() - catchUp.startedAt) / 1000) }),
       );
 
-      // 5. Claude, headless, in the background. Only implement gets the Playwright browser: a review
-      // runs specs but captures no evidence.
-      const mcp = reviewing ? "" : `--mcp-config ${RUN_DIR}/mcp.json `;
+      // 5. Claude, headless, in the background, with the Playwright browser if the task gets one.
+      const mcp = settings.browser ? `--mcp-config ${RUN_DIR}/mcp.json ` : "";
       const claude = await step.run("start-claude", async () =>
         startBackground(
           await getSandbox(id),
@@ -316,7 +226,7 @@ export const runTicket = inngest.createFunction(
       );
 
       // 6. Poll until Claude exits or the time is up.
-      const maxPolls = Math.ceil((config.claudeTimeoutMinutes * 60) / config.pollSeconds);
+      const maxPolls = Math.ceil((timeLimitMinutes * 60) / config.pollSeconds);
       let claudeExit: number | null = null;
       for (let i = 0; claudeExit === null && i < maxPolls; i++) {
         await step.sleep(`claude-wait-${i}`, `${config.pollSeconds}s`);
@@ -336,7 +246,7 @@ export const runTicket = inngest.createFunction(
       // checks against the schema. The orchestrator checks it again with the same zod schema; on
       // failure it resumes again with the error, up to STRUCTURED_RETRIES times. The orchestrator,
       // not the agent, posts the result. Returns the last error, or null when the output is good.
-      const structuredPass = async ({ validate, retryPrompt }: NonNullable<typeof pass>): Promise<string | null> => {
+      const structuredPass = async ({ validate, retryPrompt }: Pass): Promise<string | null> => {
         let lastError: string | null = null;
         for (let attempt = 0; attempt <= STRUCTURED_RETRIES; attempt++) {
           const promptFile = attempt === 0 ? `${RUN_DIR}/extract.md` : `${RUN_DIR}/extract-retry-${attempt}.md`;
@@ -380,17 +290,18 @@ export const runTicket = inngest.createFunction(
         return lastError;
       };
 
-      // A review with no review file has nothing to extract.
+      // A pass that needs a file the agent didn't write has nothing to extract.
+      const needs = pass?.needs;
       const runPass =
         pass !== null &&
-        (!reviewing ||
-          (await step.run("check-review", async () =>
-            (await sh(await getSandbox(id), `test -s ${REVIEW} && echo yes || echo no`)).trim() === "yes",
+        (!needs ||
+          (await step.run(`check-${task}`, async () =>
+            (await sh(await getSandbox(id), `test -s ${needs} && echo yes || echo no`)).trim() === "yes",
           )));
       const passError = runPass ? await structuredPass(pass) : null;
 
-      // 7. Artifacts out, plus a bundle per repo with new commits: since the branch's head on
-      // GitHub, or since main where it isn't there yet. Happens on success, failure and timeout.
+      // 7. Artifacts out, the task's files, plus a bundle per repo with new commits: since the
+      // branch's head on GitHub, or since main where it isn't there yet. Happens on success, failure and timeout.
       const changed = await step.run("collect", async () => {
         const sb = await getSandbox(id);
         const out = await sh(
@@ -414,17 +325,15 @@ export const runTicket = inngest.createFunction(
         for (const { repo } of repos) {
           await download(sb, `${RUN_DIR}/out/${repo}.bundle`, path.join(localDir, "out", `${repo}.bundle`));
         }
-        const read = async (remote: string, local: string) => {
+        // Each file is also kept in the run's folder, under its own name.
+        const read = async (remote: string) => {
           const text = await sb.fs.downloadFile(remote).catch(() => Buffer.from(""));
-          fs.writeFileSync(path.join(localDir, local), text);
+          fs.writeFileSync(path.join(localDir, path.basename(remote)), text);
           return text.toString("utf8");
         };
-        return {
-          repos,
-          prBody: await read(PR_BODY, "pr-body.md"),
-          review: await read(REVIEW, "review.md"),
-          structured: await read(PASS_OUT, "structured-output.json"),
-        };
+        const files: Record<string, string> = {};
+        for (const [key, remote] of Object.entries(prepared.outputs)) files[key] = await read(remote);
+        return { repos, files, structured: await read(PASS_OUT) };
       });
 
       // The sandbox is no longer needed; free it before talking to GitHub.
@@ -443,119 +352,15 @@ export const runTicket = inngest.createFunction(
       });
       const commits = changed.repos.reduce((n, r) => n + r.commits, 0);
 
-      // 9–11 for a review: one GitHub review per open PR, with the review as its body and the
-      // findings it left on their lines; the PRs marked ready; the review in full on the ticket.
-      // Code reads the verdict; a review without one is still posted for a human, but the run fails.
-      if (reviewing) {
-        const review = changed.review.trim();
-        const verdict = review ? parseVerdict(review) : null;
-        const repos = onGitHub as [string, ...string[]];
-        // The last attempt's error says more than a re-parse of its output would.
-        const extracted = !review
-          ? ({ ok: true, comments: [] } as const)
-          : passError
-            ? ({ ok: false, error: passError } as const)
-            : parseReviewComments(changed.structured, repos);
-        const posted = await step.run("post-review", async () => {
-          const urls: string[] = [];
-          let placed = 0;
-          let dropped = 0;
-          if (!review) return { urls, placed, dropped };
-          const comments = extracted.ok ? extracted.comments : [];
-          const body = reviewComment(ticket, review, runId);
-          for (const [repo, url] of Object.entries(openPrs)) {
-            // The hunks GitHub shows on the PR, from the host's mirror, which the push updated.
-            const split = placeComments(comments, repo, diffLines(await branchDiff(repo, branch)));
-            for (const c of split.dropped) console.warn(`[${runId}] dropping comment on ${repo}/${c.path}:${c.line}: not in the diff`);
-            const inline = split.placed.map((c) => ({ ...c, body: markForGithub(c.body) }));
-            await postReview(url, newHeads[repo]!, body, inline);
-            // Through automated review: a human can pick it up.
-            await markReady(url);
-            urls.push(url);
-            placed += split.placed.length;
-            dropped += split.dropped.length;
-          }
-          return { urls, placed, dropped };
-        });
-        const status = !review ? (timedOut ? "timed_out" : "failed") : verdict ? "succeeded" : "failed";
-        await step.run("report", async () => {
-          const errors = [
-            !review ? "The agent wrote no review." : null,
-            review && !verdict ? "The review has no readable verdict: each of `## Standards:` and `## Spec:` once, with PASS or CHANGES REQUESTED." : null,
-            review && !extracted.ok ? `No inline comments: ${extracted.error}` : null,
-          ].filter((e): e is string => e !== null);
-          const where = posted.urls.length
-            ? `Posted on ${posted.urls.map(prRef).join(", ")} with ${plural(posted.placed, "inline comment")}${posted.dropped ? ` (${posted.dropped} dropped: not on a line in the diff)` : ""}, and marked ready for review.`
-            : "No open PR to post on.";
-          const fixes = commits ? ` Pushed ${plural(commits, "fix commit")}.` : "";
-          const head = verdict ? `Reviewed: ${verdictLine(verdict)}. ${where}${fixes}` : `Reviewed, **without a readable verdict**. ${where}${fixes}`;
-          // The missing verdict is already in the head line.
-          const notes = review && !extracted.ok ? [`⚠️ No inline comments: ${extracted.error}`] : [];
-          const text = review
-            ? [head, ...notes, review].join("\n\n")
-            : timedOut
-              ? `Timed out after ${config.claudeTimeoutMinutes} minutes without writing a review.${fixes}`
-              : `Finished without writing a review.${fixes}`;
-          await finish(runId, ticket.id, { task, status, pushed: pushed.length > 0 }, text, {
-            prUrls: posted.urls,
-            reviewVerdict: verdict,
-            ...(errors.length ? { error: errors.join(" ") } : {}),
-          });
-        });
-        return { status, prUrls: posted.urls, baseShas };
-      }
-
-      // 9. Evidence to Linear: inline on the ticket, linked from the PR (GitHub can't show it inline).
-      const evidence = await step.run("publish-evidence", () => publishEvidence(localDir, changed.prBody));
-      const agentBody = linkEvidence(changed.prBody, evidence.urls);
-
-      // 10. PRs: a draft for each repo the run pushed to that has none, and the body replaced on the
-      // open ones.
-      const prs = await step.run("open-or-update-prs", async () => {
-        const opened: string[] = [];
-        const updated: string[] = [];
-        const body = prBody(ticket, agentBody, runId);
-        for (const repo of config.repos) {
-          const open = openPrs[repo];
-          if (open) {
-            if (changed.prBody.trim()) await setPrBody(open, body);
-            updated.push(open);
-          } else if (pushed.includes(repo)) {
-            opened.push(await openOrFindPr(repo, branch, prTitle(ticket), body));
-          }
-        }
-        return { opened, updated };
-      });
-      const prUrls = [...prs.opened, ...prs.updated];
-
-      // 11. Replies on the review threads the update was given, as the factory.
-      const replied = await step.run("post-replies", async () => {
-        if (!feedback || handles.length === 0 || passError) return 0;
-        const parsed = parseThreadReplies(changed.structured, handles as [string, ...string[]]);
-        if (!parsed.ok) return 0;
-        for (const r of parsed.replies) await replyToThread(feedback.handles[r.thread]!, replyBody(r, runId));
-        return parsed.replies.length;
-      });
-
-      // 12. Report back on the ticket, with the evidence inline, and hand off.
-      const status = pushed.length > 0 ? "succeeded" : timedOut ? "timed_out" : "no_changes";
-      await step.run("report", async () => {
-        const lines = [
-          prs.opened.length ? `Opened ${prs.opened.map(prRef).join(", ")} as ${config.draftPrs ? "drafts" : "PRs"}.` : null,
-          prs.updated.length ? `Updated ${prs.updated.map(prRef).join(", ")}.` : null,
-          commits ? `Pushed ${plural(commits, "commit")}.` : null,
-          handles.length ? `Replied on ${replied} of ${plural(handles.length, "review thread")}.` : null,
-          passError ? `⚠️ No thread replies: ${passError}` : null,
-          pushed.length === 0
-            ? timedOut
-              ? `Timed out after ${config.claudeTimeoutMinutes} minutes with no commits.`
-              : "Finished without committing any changes."
-            : null,
-          // With PRs, the body lives there; without, it explains what happened.
-          prUrls.length > 0 ? null : agentBody.trim(),
-          evidence.linearMarkdown,
-        ].filter((l): l is string => Boolean(l));
-        await finish(runId, ticket.id, { task, status, pushed: pushed.length > 0 }, lines.join("\n\n"), { prUrls });
+      // 9. The task posts its result and reports on the ticket.
+      const { status, prUrls } = await prepared.conclude({
+        files: changed.files,
+        structured: changed.structured,
+        passError,
+        timedOut,
+        pushed,
+        newHeads,
+        commits,
       });
       return { status, prUrls, baseShas };
     } catch (err) {

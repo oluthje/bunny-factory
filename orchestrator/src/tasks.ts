@@ -12,8 +12,16 @@ const STATUS_LABELS: readonly string[] = [IN_PROGRESS_LABEL, HUMAN_NEEDED_LABEL]
 
 /**
  * Each task's prompt is sandbox/tasks/<task>/prompt.md: the one entry point, which calls every
- * skill below with the Skill tool, in order. `skills` is what the run uploads to the runner from
- * sandbox/skills/: the skills the prompt calls, and the ones those call in turn.
+ * skill below with the Skill tool, in order. What a run of the task does before and after Claude
+ * is in runs/<task>.ts; what differs between tasks in the run itself is here.
+ * - `skills`: what the run uploads to the runner from sandbox/skills/: the skills the prompt calls,
+ *   and the ones those call in turn.
+ * - `browser`: the Playwright MCP server, for checking and capturing the UI.
+ * - `branch`: the ticket's branch. `optional` builds on it where it's on GitHub and branches from
+ *   main where it isn't; `required` fails the run when no repo has it on GitHub.
+ * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
+ * - `delivers`: what the pickup comment says the run will come back with.
+ *
  * - `implement` creates or updates: it branches from main, or, when the ticket's branch is already on
  *   GitHub, builds on it, acting on Oscar's feedback with the ticket still the spec. It reviews and fixes its own work
  *   with `code-review`, and ends with commits and a PR body; the factory opens or updates draft PRs.
@@ -21,6 +29,14 @@ const STATUS_LABELS: readonly string[] = [IN_PROGRESS_LABEL, HUMAN_NEEDED_LABEL]
  *   and ends with a review file; the factory pushes the fixes, posts the review and marks the PRs
  *   ready. It runs specs, so it gets `oscar-factory-stack`, but no browser or evidence.
  */
+export type TaskConfig = {
+  skills: readonly string[];
+  browser: boolean;
+  branch: "optional" | "required";
+  timeLimitMinutes: number | null;
+  delivers: string;
+};
+
 export const TASKS = {
   implement: {
     skills: [
@@ -33,11 +49,19 @@ export const TASKS = {
       "code-review",
       "pr",
     ],
+    browser: true,
+    branch: "optional",
+    timeLimitMinutes: null,
+    delivers: "the PR",
   },
   review: {
     skills: ["oscar-factory-rules", "oscar-factory-stack", "code-review"],
+    browser: false,
+    branch: "required",
+    timeLimitMinutes: null,
+    delivers: "the review",
   },
-} as const satisfies Record<string, { skills: readonly string[] }>;
+} as const satisfies Record<string, TaskConfig>;
 
 export type TaskName = keyof typeof TASKS;
 
