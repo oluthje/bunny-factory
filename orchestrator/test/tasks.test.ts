@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL } from "../src/labels.ts";
+import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, NO_AUTO_MERGE_LABEL } from "../src/labels.ts";
 import { promptTemplate, renderTemplate, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../src/prompt.ts";
 import { skillsFor, taskFromLabels, TASKS, type TaskName } from "../src/tasks.ts";
 
@@ -34,6 +34,12 @@ describe("taskFromLabels", () => {
   it("ignores the factory's own human-needed label", () => {
     expect(taskFromLabels(["oscar-factory:review", HUMAN_NEEDED_LABEL])).toEqual({ ok: true, task: "review" });
     expect(taskFromLabels([HUMAN_NEEDED_LABEL])).toEqual({ ok: false, reason: null });
+  });
+
+  it("ignores flag labels, which change how a task behaves but queue none", () => {
+    expect(NO_AUTO_MERGE_LABEL).toBe("oscar-factory:no-auto-merge");
+    expect(taskFromLabels(["oscar-factory:review", NO_AUTO_MERGE_LABEL])).toEqual({ ok: true, task: "review" });
+    expect(taskFromLabels([NO_AUTO_MERGE_LABEL])).toEqual({ ok: false, reason: null });
   });
 
   it("ignores tickets with no factory label", () => {
