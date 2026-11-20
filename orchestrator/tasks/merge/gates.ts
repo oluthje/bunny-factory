@@ -13,13 +13,10 @@ export type PrCheck = { repo: string; state: PrState; ci: CiState; judgedSha: st
 
 /**
  * Why the ticket's PRs can't merge, ticket-wide reasons first, then each PR's. Empty when they
- * all can. `labels` are the ticket's labels now; `pushed` the repos the merge run pushed to.
+ * all can. `labels` are the ticket's labels now.
  */
-export function blockers({ prs, labels, pushed }: { prs: readonly PrCheck[]; labels: readonly string[]; pushed: readonly string[] }): string[] {
-  const ticket = [
-    labels.includes(NO_AUTO_MERGE_LABEL) ? `\`${NO_AUTO_MERGE_LABEL}\` is on the ticket.` : null,
-    pushed.length ? `The merge run pushed commits to ${pushed.join(", ")}; it must change nothing.` : null,
-  ];
+export function blockers({ prs, labels }: { prs: readonly PrCheck[]; labels: readonly string[] }): string[] {
+  const ticket = [labels.includes(NO_AUTO_MERGE_LABEL) ? `\`${NO_AUTO_MERGE_LABEL}\` is on the ticket.` : null];
   return [...ticket, ...prs.flatMap((pr) => prBlockers(pr).map((why) => `${pr.repo}: ${why}`))].filter((b): b is string => b !== null);
 }
 

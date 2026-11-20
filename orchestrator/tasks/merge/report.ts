@@ -34,7 +34,7 @@ export function mergedText(summary: string, order: readonly string[], urls: Urls
 export function partialText(args: { merged: readonly string[]; failed: { repo: string; error: string }; rest: readonly string[]; urls: Urls }): string {
   const { merged, failed, rest, urls } = args;
   return [
-    "⚠️ Partial auto-merge:",
+    merged.length ? "⚠️ Partial auto-merge:" : "⚠️ Auto-merge failed:",
     merged.length ? `${merged.map((r) => prRef(urls[r]!)).join(", ")} merged;` : "nothing merged;",
     `${prRef(urls[failed.repo]!)} NOT merged: ${failed.error.trim().replace(/[^.!?]$/, "$&.")}`,
     rest.length ? `Not tried: ${rest.map((r) => prRef(urls[r]!)).join(", ")}.` : null,

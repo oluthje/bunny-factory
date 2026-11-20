@@ -13,6 +13,7 @@ const state = (over: Partial<PrState> = {}): PrState => ({
   base: "main",
   headSha: "abc",
   open: true,
+  merged: false,
   ...over,
 });
 const pr = (over: Partial<PrState> = {}, rest: Partial<Omit<PrCheck, "state">> = {}): PrCheck => ({
@@ -22,8 +23,7 @@ const pr = (over: Partial<PrState> = {}, rest: Partial<Omit<PrCheck, "state">> =
   judgedSha: "abc",
   ...rest,
 });
-const check = (prs: PrCheck[], over: { labels?: string[]; pushed?: string[] } = {}) =>
-  blockers({ prs, labels: over.labels ?? ["Bug"], pushed: over.pushed ?? [] });
+const check = (prs: PrCheck[], over: { labels?: string[] } = {}) => blockers({ prs, labels: over.labels ?? ["Bug"] });
 
 describe("blockers", () => {
   it("clears a ticket whose PRs are open, ready, green, clean and unchanged since judged", () => {
@@ -44,10 +44,6 @@ describe("blockers", () => {
 
   it("holds back a PR with commits the merge run didn't judge", () => {
     expect(check([pr({ headSha: "def" })])).toEqual(["app: has commits pushed after the merge run judged it."]);
-  });
-
-  it("holds back when the merge run itself pushed commits", () => {
-    expect(check([pr()], { pushed: ["app"] })).toEqual(["The merge run pushed commits to app; it must change nothing."]);
   });
 
   it("holds back a draft, a closed PR, a conflict, and a PR GitHub can't yet place", () => {

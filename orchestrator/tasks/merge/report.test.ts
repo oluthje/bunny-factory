@@ -60,6 +60,12 @@ describe("partialText", () => {
     );
   });
 
+  it("says nothing merged, not a partial merge, when the first merge fails", () => {
+    expect(partialText({ merged: [], failed: { repo: "api", error: "409" }, rest: [], urls })).toBe(
+      "⚠️ Auto-merge failed: nothing merged; [bunnyapp/api#7429](https://github.com/bunnyapp/api/pull/7429) NOT merged: 409. Finish by hand.",
+    );
+  });
+
   it("lists PRs it never got to", () => {
     expect(partialText({ merged: [], failed: { repo: "api", error: "409" }, rest: ["app"], urls })).toContain(
       "Not tried: [bunnyapp/app#3534](https://github.com/bunnyapp/app/pull/3534).",

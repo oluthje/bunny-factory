@@ -190,6 +190,7 @@ export type PrState = {
   base: string;
   headSha: string;
   open: boolean;
+  merged: boolean;
 };
 
 /**
@@ -198,7 +199,15 @@ export type PrState = {
  */
 export async function prState(url: string): Promise<PrState> {
   const { repo, number } = parsePrUrl(url);
-  type Pr = { draft: boolean; mergeable: boolean | null; mergeable_state: string; state: string; base: { ref: string }; head: { sha: string } };
+  type Pr = {
+    draft: boolean;
+    mergeable: boolean | null;
+    mergeable_state: string;
+    state: string;
+    merged: boolean;
+    base: { ref: string };
+    head: { sha: string };
+  };
   let pr = await gh<Pr>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`);
   for (let i = 0; pr.mergeable === null && i < 4; i++) {
     await new Promise((r) => setTimeout(r, 3000));
@@ -212,6 +221,7 @@ export async function prState(url: string): Promise<PrState> {
     base: pr.base.ref,
     headSha: pr.head.sha,
     open: pr.state === "open",
+    merged: pr.merged,
   };
 }
 

@@ -69,8 +69,8 @@ describe("TASKS", () => {
     expect(TASKS.review).toMatchObject({ browser: false, stack: true, branch: "required" });
   });
 
-  it("gives merge only the rules and its rubric: no browser, no stack, the branch on GitHub, and 10 minutes", () => {
-    expect(TASKS.merge).toMatchObject({ browser: false, stack: false, branch: "required", timeLimitMinutes: 10, docs: ["rubric.md"] });
+  it("gives merge only the rules and its rubric: no browser, no stack, the branch read-only, and 10 minutes", () => {
+    expect(TASKS.merge).toMatchObject({ browser: false, stack: false, branch: "read", timeLimitMinutes: 10, docs: ["rubric.md"] });
     expect(skillsFor("merge")).toEqual(["factory-rules"]);
   });
 

@@ -36,7 +36,7 @@ export function ciState({ runs, statuses }: { runs: CheckRun[]; statuses: Commit
 }
 
 /** CI across several commits, such as each PR on a ticket: red beats pending beats green. */
-ciState.combine = (states: CiState[]): CiState =>
+export const combineCi = (states: CiState[]): CiState =>
   summarize(
     states.flatMap((s) => s.failing),
     states.flatMap((s) => s.pending),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ciState, type CheckRun, type CommitStatus } from "../src/checks.ts";
+import { ciState, combineCi, type CheckRun, type CommitStatus } from "../src/checks.ts";
 
 const run = (name: string, status: string, conclusion: string | null = null): CheckRun => ({ name, status, conclusion });
 const status = (context: string, state: string): CommitStatus => ({ context, state });
@@ -46,8 +46,8 @@ describe("ciState", () => {
     const green = ciState({ runs: [run("a", "completed", "success")], statuses: [] });
     const pending = ciState({ runs: [run("b", "queued")], statuses: [] });
     const red = ciState({ runs: [run("c", "completed", "failure")], statuses: [] });
-    expect(ciState.combine([green, pending]).state).toBe("pending");
-    expect(ciState.combine([green, pending, red])).toEqual({ state: "red", failing: ["c"], pending: ["b"], checks: 3 });
-    expect(ciState.combine([green, green]).state).toBe("green");
+    expect(combineCi([green, pending]).state).toBe("pending");
+    expect(combineCi([green, pending, red])).toEqual({ state: "red", failing: ["c"], pending: ["b"], checks: 3 });
+    expect(combineCi([green, green]).state).toBe("green");
   });
 });
