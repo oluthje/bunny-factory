@@ -19,7 +19,9 @@ tasks/
 The engine that runs every task is in `src/`, and knows no task by name: the contract is the `Task` type in `src/task.ts`. Skills and Claude Code's settings are in [../runner-files/](../runner-files/README.md).
 
 
-Runs start only from a ticket's `oscar-factory:<task>` label, and every run ends by moving the ticket's labels on. Each task decides what it hands off to (its `conclude` sets `next`), and `src/transitions.ts` moves the labels, holding back any run that didn't succeed.
+Runs start only from a ticket's `oscar-factory:<task>` label, and every run ends by moving the ticket's labels on. Each task decides what comes next (its `conclude` sets `next`: a task, `human` to wait on Oscar, or `done`), and `src/transitions.ts` moves the labels, holding back any run that didn't succeed. A task's `prepare` can also end the run before any runner, with a `Stop`.
+
+The chain: `explore` (easy call) → `implement` (pushed commits) → `review` (posted on a PR) → `merge` (merged: done).
 
 ### `implement`
 
@@ -60,7 +62,7 @@ implement/extract.md          update only, and only with review threads: not cal
 
 Starts from: the `oscar-factory:review` label, which an `implement` run that pushed commits sets, or Oscar does.
 
-Ends with: fix commits and a review file. The factory pushes the fixes, posts the review, and marks the PRs ready for review. Then the ticket waits on Oscar.
+Ends with: fix commits and a review file. The factory pushes the fixes, posts the review, and marks the PRs ready for review. If it posted on a PR, the ticket's label becomes `oscar-factory:merge`, whatever the verdict: merge weighs the findings itself. With no PR to post on, the ticket waits on Oscar.
 
 It fixes only the findings it's sure of and comments on the rest. It runs specs, so it starts the Bunny stack and gets `factory-stack`. It gets no browser.
 
@@ -84,8 +86,39 @@ review/extract.md             not called by the agent: the factory resumes the s
                                     it resumes again with the error, up to 2 more times.
                                     After pushing the fixes, it posts one GitHub review per open PR on the
                                     new head: the review as its body, those findings as inline comments (any
-                                    outside the diff are dropped). On the ticket, the question cards go
-                                    above the review, which is folded.
+                                    outside the diff are dropped). The ticket gets one line pointing at the
+                                    PRs. Only with no PR to post on do the question cards and the folded
+                                    review go on the ticket.
+```
+
+### `merge`
+
+Starts from: the `oscar-factory:merge` label, which a `review` run that posted on a PR sets, or Oscar does.
+
+Ends with: the ticket's PRs merged, all of them or none. Merged, the ticket keeps no factory label (`next: "done"`). Anything else waits on Oscar, with the reason on the ticket and on each PR.
+
+Before any runner, `prepare` stops the run when the ticket has Oscar's flag label `oscar-factory:no-auto-merge`, has no open PR, or has the branch in a repo with no PR. Then it waits for CI on every PR, polling every 2 minutes for up to 30, and stops on red or a timeout. The agent gets no stack and no browser, only `factory-rules` and `rubric.md`, and 10 minutes. It changes nothing.
+
+After the run, the orchestrator checks every PR again itself (`gates.ts`): open, not a draft, not into `production`, mergeable, CI green, head unchanged since the agent read it, no flag label, nothing pushed by the run. With `FACTORY_MERGE_DRY_RUN` on, the default, it only says what it would merge. Otherwise it merges in order, each with a merge commit guarded by the head the agent judged, and deletes the branch. A merge that fails after another went in stops there with a partial-merge note: merges aren't undone.
+
+```
+merge/prompt.md              each open PR with its CI, body, reviews, unresolved threads and comments;
+                                   Oscar's ticket comments and the explore findings
+├── 1. factory-rules
+├── 2. merge/rubric.md             what an easy call is: clear ticket, diff does just that, small,
+│                                  tested, local; never a question, an open Decision needed, a one-way
+│                                  door, shared framework code, money rules, or auth
+├── 3–5. read and judge            the whole diff per repo, against the ticket; review's findings as
+│                                  evidence, not the verdict; the PRs judged as one change
+├── 6. the verdict                 fixed headings: Verdict / one per PR / Order
+└── Finish line                    verdict written, no commits, clean git status
+
+merge/extract.md             not called by the agent: the factory resumes the session with it under
+                                   `claude --json-schema` for `{ summary, prs: [{ repo, verdict, reason }],
+                                   order }`, checked again with the same zod schema (`verdict.ts`), which
+                                   also wants every open PR judged once, retried up to 2 times. An order
+                                   that doesn't name every repo once falls back to api, app, portal,
+                                   kong (`order.ts`).
 ```
 
 ### `explore`

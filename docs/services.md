@@ -31,20 +31,21 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
    - A PAT cannot create short-lived tokens, and a GitHub App needs company approval.
    - Code enters and leaves sandboxes as git bundles over Daytona's file API, so **the sandbox never holds a GitHub credential**.
    - PRs are authored by you, so a teammate must do the human review.
+   - The `merge` task merges as you too. No repo requires an approving review on `main`, so that works today. It needs the PAT to read checks and commit statuses as well as write contents and pull requests.
    - The PAT **expires 2026-12-17**, and Fly warns a week ahead.
 8. **GitHub events are polled.** You don't have admin rights on `api` or `kong`, so you can't add webhooks there.
    - An Inngest cron runs every 2–5 minutes and emits events such as `github/pr.review_submitted`.
    - GitHub-triggered runs stay switched off until Linear-triggered runs have earned trust.
 9. **Linear events are polled.** You are not a workspace admin, so you can't add webhooks.
    - An Inngest cron runs every 1–2 minutes on `updatedAt` cursors.
-   - A ticket opts in only when it has an **`oscar-factory:<task>` label** (`oscar-factory:implement`, `oscar-factory:review` or `oscar-factory:explore`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
+   - A ticket opts in only when it has an **`oscar-factory:<task>` label** (`oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore` or `oscar-factory:merge`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
    - **The labels are the ticket's state**, and `orchestrator/src/transitions.ts` is the one place that changes them:
      - **Pickup.** The poller adds **`oscar-factory:in-progress`** and leaves the task label on, so Linear shows which stage each ticket is in. While the run works, the poller doesn't start another on the ticket.
-     - **A run ends.** The factory removes in-progress and the task label. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. The chain: an `explore` run with an easy-call verdict hands off to `oscar-factory:implement`, and an `implement` run that pushed commits hands off to `oscar-factory:review`.
+     - **A run ends.** The factory removes in-progress and the task label. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. The chain: an `explore` run with an easy-call verdict hands off to `oscar-factory:implement`, an `implement` run that pushed commits hands off to `oscar-factory:review`, and a `review` run that posted on a PR hands off to `oscar-factory:merge`. A `merge` run that merged ends the chain with no factory label at all.
      - **The poller is the only thing that starts runs.** A ticket with a run queued or working waits, and the run's end brings it back.
      - **At most `FACTORY_MAX_RUNS` runs in flight (default 3), held by the poller.** Each poll fills the free slots, oldest ticket first; the rest keep their task label and wait in Linear. A ticket still has one run at a time. Inngest's concurrency limit can't do this: it counts only executing steps, and a run's `step.sleep` waits free the slot. Runs share the orchestrator's git mirrors, so each repo's mirror takes one operation at a time.
      - **Loop cap:** 5 runs of one task per ticket. Past it, the poller refuses the run and the ticket waits on Oscar.
-     - The poller ignores in-progress and human-needed when choosing a task.
+     - The poller ignores in-progress and human-needed when choosing a task, and the flag label **`oscar-factory:no-auto-merge`**, which only Oscar sets: the factory never merges that ticket's PRs.
    - Every factory comment carries a marker, so the pollers skip the factory's own comments.
 10. **The factory's state lives in SQLite on a Fly volume**, with one machine. It holds:
     - the poll cursors and last-seen PR state
