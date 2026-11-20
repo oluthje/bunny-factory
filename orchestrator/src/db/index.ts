@@ -43,7 +43,7 @@ export function runsInFlight(): number {
 
 /**
  * How many runs of the task the ticket has had, for the loop cap. A cancelled run doesn't count: it
- * was stopped before it could finish its try, by `factory stop` or by hand.
+ * was stopped before it could finish its try, by `fac stop` or by hand.
  */
 export function countRuns(ticketId: string, task: string): number {
   return (
@@ -103,7 +103,7 @@ export function heartbeat(id: string): void {
     .run();
 }
 
-/** Records the step a run in flight just started, for `factory status`. */
+/** Records the step a run in flight just started, for `fac status`. */
 export function recordStep(id: string, step: string): void {
   db.update(runs)
     .set({ currentStep: step })

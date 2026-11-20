@@ -6,7 +6,7 @@
 // - A factory sandbox whose run this orchestrator has finished is deleted: a run's own delete failed.
 // - Run folders on the data volume are pruned: older than 30 days, or oldest first while the volume
 //   is short of space. Never a run in flight's, the mirrors or factory.db; SQLite rows are kept.
-// It keeps running while the factory is stopped (`factory stop`).
+// It keeps running while the factory is stopped (`fac stop`).
 // The pure decisions are `isLostRun`, `leftoverSandboxes` and `runFoldersToPrune` in logic.ts.
 import { runsOpen, runStatuses } from "../db/index.ts";
 import { deleteRunFolder, runFolders, volumeSpace } from "../disk.ts";

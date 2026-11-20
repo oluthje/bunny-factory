@@ -26,7 +26,7 @@ export const runs = sqliteTable("runs", {
    * in flight whose heartbeat goes quiet has been lost by Inngest, and sweep-runs closes it.
    */
   lastSeenAt: text("last_seen_at"),
-  /** The id of the last step the run started, for `factory status`. Sleeps don't change it. */
+  /** The id of the last step the run started, for `fac status`. Sleeps don't change it. */
   currentStep: text("current_step"),
   finishedAt: text("finished_at"),
 });
@@ -38,13 +38,13 @@ export const cursors = sqliteTable("cursors", {
 });
 
 /**
- * One row (id 1): whether the factory takes new runs, set by `factory start` and `factory stop`
+ * One row (id 1): whether the factory takes new runs, set by `fac start` and `fac stop`
  * (scripts/factory.ts). It survives deploys and restarts. No row means running.
  */
 export const factoryState = sqliteTable("factory_state", {
   id: integer("id").primaryKey(),
   state: text("state", { enum: ["running", "stopped"] }).notNull(),
   changedAt: text("changed_at").notNull(),
-  /** When poll-linear last fetched tickets, for `factory status`. */
+  /** When poll-linear last fetched tickets, for `fac status`. */
   lastPolledAt: text("last_polled_at"),
 });

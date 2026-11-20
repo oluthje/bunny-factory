@@ -83,7 +83,7 @@ export const runTicket = inngest.createFunction(
     concurrency: { limit: config.maxRuns },
     // Records a heartbeat on every call, so sweep-runs can tell a run Inngest has lost.
     middleware: [RunHeartbeat],
-    // `factory stop --now` closes the run's record and moves its labels itself, then cancels it here.
+    // `fac stop --now` closes the run's record and moves its labels itself, then cancels it here.
     cancelOn: [{ event: RUN_STOP, match: "data.runId" }],
     retries: 2,
     onFailure: async ({ event, step }) => {
@@ -92,7 +92,7 @@ export const runTicket = inngest.createFunction(
       const { runId, ticket, task } = event.data.event.data as RunRequested;
       await step.run("delete-leftover-sandbox", () => deleteSandbox(sandboxName(ticket.identifier, runId)));
       await step.run("mark-stopped", async () => {
-        // `factory stop --now` already requeued it: its labels stay as they are.
+        // `fac stop --now` already requeued it: its labels stay as they are.
         if (runStatus(runId) === "cancelled") return;
         closeIfOpen(runId, "failed");
         await applyLabels(ticket.id, finished(task, { status: "failed", next: "human" }));
@@ -148,7 +148,7 @@ export const runTicket = inngest.createFunction(
       }
       const { pass } = prepared;
 
-      // 1c. `factory stop` drains: a run with no runner yet ends here, cancelled, and its ticket stays
+      // 1c. `fac stop` drains: a run with no runner yet ends here, cancelled, and its ticket stays
       // queued. Checked again here, not only by the poller, since a run may wait in Inngest's queue.
       const mayStart = await step.run("may-start-runner", () => mayStartRuns(config.poll, getFactoryState().state));
       if (!mayStart) {

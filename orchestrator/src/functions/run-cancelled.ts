@@ -10,7 +10,7 @@ import { finished } from "../transitions.ts";
  * A run stopped from the Inngest dashboard skips its own cleanup and `onFailure`, so this does it:
  * delete the sandbox, record it, say so on the ticket and move its labels on (to human-needed:
  * a cancelled run never hands off).
- * A run `factory stop --now` cancelled is already closed and requeued (task.ts, `requeue`): only
+ * A run `fac stop --now` cancelled is already closed and requeued (task.ts, `requeue`): only
  * its sandbox is deleted again. `close` is its own step so a retry of `report` remembers whether
  * this function closed the run.
  */
