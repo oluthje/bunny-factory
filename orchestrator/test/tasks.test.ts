@@ -17,7 +17,7 @@ describe("taskFromLabels", () => {
   it("rejects a factory label with no known task", () => {
     expect(taskFromLabels(["oscar-factory:deploy"])).toEqual({
       ok: false,
-      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`.",
+      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`.",
     });
   });
 
@@ -67,6 +67,11 @@ describe("TASKS", () => {
 
   it("gives review no browser, the stack for specs, and needs the branch on GitHub", () => {
     expect(TASKS.review).toMatchObject({ browser: false, stack: true, branch: "required" });
+  });
+
+  it("gives merge only the rules and its rubric: no browser, no stack, the branch on GitHub, and 10 minutes", () => {
+    expect(TASKS.merge).toMatchObject({ browser: false, stack: false, branch: "required", timeLimitMinutes: 10, docs: ["rubric.md"] });
+    expect(skillsFor("merge")).toEqual(["factory-rules"]);
   });
 
   it("gives explore the browser, the stack, origin/main only, and 20 minutes", () => {
