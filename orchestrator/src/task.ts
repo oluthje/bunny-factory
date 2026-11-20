@@ -20,7 +20,8 @@ import { finished, nextTask, type RunEnd } from "./transitions.ts";
  * - `stack`: the catch-up before Claude starts (gems, npm, migrations, the running Bunny stack).
  *   A task that only reads code goes without, and starts minutes sooner.
  * - `branch`: the ticket's branch. `optional` builds on it where it's on GitHub and branches from
- *   main where it isn't; `required` fails the run when no repo has it on GitHub; `none` never
+ *   main where it isn't; `required` fails the run when no repo has it on GitHub; `read` is
+ *   `required` that never pushes, so whatever the agent commits stays on the runner; `none` never
  *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
  * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs, or
@@ -31,7 +32,7 @@ export type Task = {
   docs: readonly string[];
   browser: boolean;
   stack: boolean;
-  branch: "optional" | "required" | "none";
+  branch: "optional" | "required" | "read" | "none";
   timeLimitMinutes: number | null;
   prepare: (ctx: RunContext) => Promise<Prepared | Stop>;
 };

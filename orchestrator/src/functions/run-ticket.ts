@@ -96,6 +96,8 @@ export const runTicket = inngest.createFunction(
       // 1. Bundles of an up-to-date main, built from the orchestrator's mirrors, plus the ticket's branch
       // from every repo that has it on GitHub, unless the task never touches it.
       const usesBranch = settings.branch !== "none";
+      // Only a task that builds on the branch pushes: `read` checks it out, and anything committed stays on the runner.
+      const pushes = settings.branch === "optional" || settings.branch === "required";
       const { baseShas, heads } = await step.run("bundle-main", async () => {
         const shas: Record<string, string> = {};
         const found: Record<string, string> = {};
@@ -107,7 +109,7 @@ export const runTicket = inngest.createFunction(
         return { baseShas: shas, heads: found };
       });
       const onGitHub = Object.keys(heads);
-      if (settings.branch === "required" && onGitHub.length === 0) {
+      if ((settings.branch === "required" || settings.branch === "read") && onGitHub.length === 0) {
         throw new Error(`Nothing to ${task}: no repo has the branch \`${branch}\` on GitHub.`);
       }
 
@@ -187,7 +189,8 @@ export const runTicket = inngest.createFunction(
 
       // 4. Catch-up: gems, npm, migrations, then the stack, for a task that uses it. Runs in the
       // background and is polled. Inngest replays this function for every step, so wall-clock
-      // times are taken inside steps.
+      // times are taken inside steps. Flipping a task's `stack` changes its steps: deploy that with
+      // none of its runs in flight (coding standards, rule 9).
       if (settings.stack) {
         const catchUp = await step.run("start-catch-up", async () => ({
           startedAt: Date.now(),
@@ -300,7 +303,7 @@ export const runTicket = inngest.createFunction(
 
       // 7. Artifacts out, the task's files, plus a bundle per repo with new commits: since the
       // branch's head on GitHub, or since main where it isn't there yet; none for a task that never
-      // touches the branch. Happens on success, failure and timeout.
+      // pushes. Happens on success, failure and timeout.
       const changed = await step.run("collect", async () => {
         const sb = await getSandbox(id);
         const out = await sh(
@@ -311,7 +314,7 @@ export const runTicket = inngest.createFunction(
              git status --short > ${ARTIFACTS}/git-status-$r.txt
              start=origin/${config.baseBranch}
              git rev-parse -q --verify refs/remotes/origin/${shQuote(branch)} >/dev/null && start=origin/${shQuote(branch)}
-             n=${usesBranch ? `$(git rev-list --count "$start"..${shQuote(branch)})` : "0"}
+             n=${pushes ? `$(git rev-list --count "$start"..${shQuote(branch)})` : "0"}
              [ "$n" -gt 0 ] && git bundle create -q ${RUN_DIR}/out/$r.bundle origin/${config.baseBranch}..${shQuote(branch)} 2>/dev/null
              echo "$r $n"
            done
