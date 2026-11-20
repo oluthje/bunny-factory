@@ -1,9 +1,9 @@
 ---
-name: oscar-factory-evidence
+name: factory-evidence
 description: Capture before-and-after visual evidence for a PR. Use when a change alters what a user sees or does in the UI, before editing any code, and again when writing the PR body's Evidence section.
 ---
 
-Visual evidence shows a reviewer the change without checking out the branch. It fills the **Evidence** section of the `pr` skill's template.
+Visual evidence fills the **Evidence** section of the `pr` skill's template.
 
 ## 1. Classify the change
 

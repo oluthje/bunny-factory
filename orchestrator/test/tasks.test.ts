@@ -44,13 +44,13 @@ describe("taskFromLabels", () => {
 describe("skillsFor", () => {
   it("ships implement the rules, the stack, evidence, implement and what it calls, code-review and pr", () => {
     expect(skillsFor("implement")).toEqual([
-      "oscar-factory-rules", "oscar-factory-stack", "oscar-factory-evidence", "implement", "tdd", "codebase-design",
+      "factory-rules", "factory-stack", "factory-evidence", "implement", "tdd", "codebase-design",
       "code-review", "pr",
     ]);
   });
 
   it("ships review the rules, the stack for running specs, and code-review: no evidence, no PR body", () => {
-    expect(skillsFor("review")).toEqual(["oscar-factory-rules", "oscar-factory-stack", "code-review"]);
+    expect(skillsFor("review")).toEqual(["factory-rules", "factory-stack", "code-review"]);
   });
 });
 
@@ -65,7 +65,7 @@ describe("TASKS", () => {
 
   it("gives explore the browser, origin/main only, and 20 minutes", () => {
     expect(TASKS.explore).toMatchObject({ browser: true, branch: "none", timeLimitMinutes: 20 });
-    expect(skillsFor("explore")).toEqual(["oscar-factory-rules", "oscar-factory-stack"]);
+    expect(skillsFor("explore")).toEqual(["factory-rules", "factory-stack"]);
   });
 });
 
@@ -91,7 +91,7 @@ describe("runner files", () => {
   });
 
   it("has a prompt for every task that starts with the rules", () => {
-    for (const task of tasks) expect(promptTemplate(task), task).toMatch(/^1\. `oscar-factory-rules`/m);
+    for (const task of tasks) expect(promptTemplate(task), task).toMatch(/^1\. `factory-rules`/m);
   });
 
   it("names every skill its task ships, so the prompt is the one place to read the order", () => {

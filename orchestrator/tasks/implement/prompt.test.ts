@@ -33,8 +33,7 @@ describe("implement's prompt", () => {
     expect(prompt).toContain("in **update** mode");
     expect(prompt).toContain("checked out at the PR's current head");
     expect(prompt).toContain("## Feedback for this round");
-    expect(prompt).toContain("The ticket is the spec in both modes.");
-    expect(prompt).toContain("The ticket above is still the spec for the whole PR.");
+    expect(prompt).toContain("The ticket is still the spec; the feedback section below is what to change this round.");
     expect(prompt).toContain("> Rename this.");
     expect(prompt).toContain("No rebase, amend, reset or squash");
   });

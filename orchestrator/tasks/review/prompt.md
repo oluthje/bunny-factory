@@ -17,8 +17,8 @@ This is a factory run of the `review` task: review the ticket's branch below wit
 
 ## Steps
 
-1. `oscar-factory-rules`: the rules for the whole run.
-2. `oscar-factory-stack`: the repos and the running Bunny stack, for running specs. There is no browser in this run.
+1. `factory-rules`: the rules for the whole run.
+2. `factory-stack`: the repos and the running Bunny stack, for running specs. There is no browser in this run.
 3. `code-review`, in each repo where `{{branch}}` differs from `origin/main`. The fixed point is `origin/main` and the spec is the ticket above, read with the PR body's Decisions.
 4. Fix the findings you're sure of. A finding is yours to fix when it has one clear fix that Oscar would plainly accept: a broken standard, a missed edge case, a small slip from the spec. Commit each fix on its own, with a spec where one fits, and run the specs covering the files you touched.
    Leave a finding as a comment when it needs a product decision, has more than one sensible fix, or you aren't sure. Start a product call's finding with **Decision needed:**.

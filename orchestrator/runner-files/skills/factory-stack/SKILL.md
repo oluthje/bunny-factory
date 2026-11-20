@@ -1,5 +1,5 @@
 ---
-name: oscar-factory-stack
+name: factory-stack
 description: Reference for the Bunny stack in a factory run: repos, services, specs, browser login and known gaps. Use when running, testing or looking at Bunny during a factory run.
 ---
 
@@ -26,7 +26,7 @@ Every service is already running natively (no Docker): Rails, Solid Queue, both 
 
 ## Specs
 
-`cd ~/bunny/api && bin/rspec <files>`. The test database is prepared. The full `api` suite takes about 45 minutes in one process.
+`cd ~/bunny/api && bin/rspec <files>`. The test database is prepared.
 
 ## Browser
 

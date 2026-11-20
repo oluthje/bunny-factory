@@ -21,7 +21,7 @@ export function renderThread(comments: readonly TicketComment[]): string {
   const sections: string[] = [];
   if (latest) {
     sections.push(
-      `## Explore findings\n\nContext, not the spec: what an explore run found when it checked this ticket against the code. Start from its evidence and blast radius instead of rediscovering them. The ticket above is still the spec.\n\n${findingsBlock(latest.findings)}`,
+      `## Explore findings\n\nContext, not the spec: what an explore run found when it checked this ticket against the code. Start from its evidence and blast radius instead of rediscovering them.\n\n${findingsBlock(latest.findings)}`,
     );
   }
   if (mine.length) {
@@ -49,7 +49,7 @@ export function promptVars(args: { feedback: string | null; thread: string }): R
         : "checked out from an up-to-date `main` in every repo",
     feedback:
       feedback !== null
-        ? `## Feedback for this round\n\nThe ticket's branch is already on GitHub with open PRs, so this run **updates** them. The ticket above is still the spec for the whole PR. The feedback below is what Oscar wants changed this round, on top of it.\n\n${feedback}`
+        ? `## Feedback for this round\n\n${feedback}`
         : "",
   };
 }

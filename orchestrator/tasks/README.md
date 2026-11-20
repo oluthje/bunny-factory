@@ -31,9 +31,9 @@ Ends with: commits and a PR body. The factory pushes without force, opens a draf
 
 ```
 implement/prompt.md          one prompt for both modes: {{mode}}, {{start}} and {{feedback}} differ
-├── 1. oscar-factory-rules          headless decisions, time budget, origin/main as the fixed point, gaps
-├── 2. oscar-factory-stack          the repos and the running Bunny stack: services, specs, login, known gaps
-├── 3. oscar-factory-evidence       steps 1–2: classify the change, capture the "before" on origin/main
+├── 1. factory-rules                headless decisions, time budget, origin/main as the fixed point, gaps
+├── 2. factory-stack                the repos and the running Bunny stack: services, specs, login, known gaps
+├── 3. factory-evidence             steps 1–2: classify the change, capture the "before" on origin/main
 │                                   (an update checks out origin/main to capture it, then returns)
 ├── 4. implement                    the ticket as the spec; an update acts on the feedback on top of it;
 │   │                               its closing code-review is step 5
@@ -42,10 +42,10 @@ implement/prompt.md          one prompt for both modes: {{mode}}, {{start}} and 
 │       └── codebase-design
 │           └── DEEPENING.md, DESIGN-IT-TWICE.md
 ├── 5. code-review                  per changed repo, against origin/main; fixes what it agrees with, commits
-├── 6. oscar-factory-evidence       steps 3–5: capture the "after" on reviewed code, GIFs, the Evidence section
+├── 6. factory-evidence             steps 3–5: capture the "after" on reviewed code, GIFs, the Evidence section
 ├── 7. pr                           the PR body for the whole PR, held to implement/pr-guide.md:
 │                                   plain opening, every file a line, ≤5 Decisions, Gaps, the rest
-│                                   in collapsed Run notes
+│                                   in collapsed Run notes, the Evidence section as step 6 wrote it
 └── Finish line                     commits with the ticket prefix, history only gains commits, clean git
                                     status, the PR body written
 
@@ -62,12 +62,12 @@ Starts from: the `oscar-factory:review` label, which an `implement` run that pus
 
 Ends with: fix commits and a review file. The factory pushes the fixes, posts the review, and marks the PRs ready for review. Then the ticket waits on Oscar.
 
-It fixes only the findings it's sure of and comments on the rest. It runs specs, so it starts the Bunny stack and gets `oscar-factory-stack`. It gets no browser.
+It fixes only the findings it's sure of and comments on the rest. It runs specs, so it starts the Bunny stack and gets `factory-stack`. It gets no browser.
 
 ```
 review/prompt.md
-├── 1. oscar-factory-rules
-├── 2. oscar-factory-stack          for running specs
+├── 1. factory-rules
+├── 2. factory-stack                for running specs
 ├── 3. code-review                  per changed repo, against origin/main, with the ticket as the spec,
 │                                   read with the PR body's Decisions (the prompt carries the open PR's
 │                                   body as context, e.g. for a change Oscar asked for that departs from it)
@@ -96,8 +96,8 @@ It works on `origin/main` only (`branch: "none"`): every repo is detached, the t
 
 ```
 explore/prompt.md            Oscar's comments on the ticket, and the last findings if it was explored before
-├── 1. oscar-factory-rules
-├── 2. oscar-factory-stack
+├── 1. factory-rules
+├── 2. factory-stack
 ├── 3–5. claims, evidence, map      each claim checked against the code (file:line, a reproduction, or a
 │                                   screenshot), the 2–3 places it touches, schema change, one- or two-way door
 ├── 6. verdict                      easy-call: clear, uncontested, two-way; anything else human-needed

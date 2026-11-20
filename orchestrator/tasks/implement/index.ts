@@ -16,9 +16,9 @@ import { parseThreadReplies, replyBody, replyRetryPrompt, threadRepliesJsonSchem
 
 export const implement: Task = {
   skills: [
-    "oscar-factory-rules",
-    "oscar-factory-stack",
-    "oscar-factory-evidence",
+    "factory-rules",
+    "factory-stack",
+    "factory-evidence",
     "implement",
     "tdd", // called by implement
     "codebase-design", // called by tdd

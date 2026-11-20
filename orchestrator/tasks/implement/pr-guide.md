@@ -1,9 +1,10 @@
-<!-- implement's rules for the PR body, on top of the `pr` skill's template. Reaches the runner
-beside prompt.md (see `docs` in index.ts); prompt.md's step 7 points here. -->
-
 # The PR body
 
 Oscar reads the PR body before the diff, without the ticket open. Write it with the `pr` skill's template, and hold it to these rules on top.
+
+## Evidence
+
+Use the Evidence section `factory-evidence` wrote, as is: its table replaces the template's Before/After list, and anything it couldn't capture stays under that table, not in Gaps.
 
 ## Summary
 
