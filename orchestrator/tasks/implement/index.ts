@@ -27,6 +27,7 @@ export const implement: Task = {
   ],
   docs: ["pr-guide.md"], // read at step 7, with the pr skill
   browser: true,
+  stack: true,
   branch: "optional",
   timeLimitMinutes: null,
   prepare,
@@ -120,7 +121,7 @@ async function prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes
           evidence.linearMarkdown,
         ].filter((l): l is string => Boolean(l));
         // New commits always get a review, whether they opened the PR or updated it.
-        await finish({ runId, ticketId: ticket.id, end: { status, next: pushed.length > 0 ? "review" : null }, text: lines.join("\n\n"), record: { prUrls } });
+        await finish({ runId, ticketId: ticket.id, end: { status, next: pushed.length > 0 ? "review" : "human" }, text: lines.join("\n\n"), record: { prUrls } });
       });
       return { status, prUrls };
     },

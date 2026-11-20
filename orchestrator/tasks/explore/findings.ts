@@ -4,7 +4,7 @@
 // unit-tested in findings.test.ts.
 import { z } from "zod/v4";
 import type { TicketComment } from "../../src/comments.ts";
-import type { TaskName } from "../index.ts";
+import type { Next } from "../../src/transitions.ts";
 import { questionsSchema, type Question } from "../../src/questions.ts";
 import { commentText, hasCommentTag, isFactoryComment } from "../../src/logic.ts";
 import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "../../src/structured.ts";
@@ -39,8 +39,8 @@ export function parseExploreResult(
 }
 
 /** What an explore run hands off to: only an easy call goes straight on; anything else, or no readable verdict, waits for Oscar. */
-export function handOff(verdict: ExploreVerdict | null): TaskName | null {
-  return verdict === "easy-call" ? "implement" : null;
+export function handOff(verdict: ExploreVerdict | null): Next {
+  return verdict === "easy-call" ? "implement" : "human";
 }
 
 export function verdictRetryPrompt(error: string): string {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL } from "../src/labels.ts";
+import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, NO_AUTO_MERGE_LABEL } from "../src/labels.ts";
 import { promptTemplate, renderTemplate, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../src/prompt.ts";
 import { skillsFor, taskFromLabels, TASKS, type TaskName } from "../src/tasks.ts";
 
@@ -17,7 +17,7 @@ describe("taskFromLabels", () => {
   it("rejects a factory label with no known task", () => {
     expect(taskFromLabels(["oscar-factory:deploy"])).toEqual({
       ok: false,
-      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`.",
+      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`.",
     });
   });
 
@@ -34,6 +34,12 @@ describe("taskFromLabels", () => {
   it("ignores the factory's own human-needed label", () => {
     expect(taskFromLabels(["oscar-factory:review", HUMAN_NEEDED_LABEL])).toEqual({ ok: true, task: "review" });
     expect(taskFromLabels([HUMAN_NEEDED_LABEL])).toEqual({ ok: false, reason: null });
+  });
+
+  it("ignores flag labels, which change how a task behaves but queue none", () => {
+    expect(NO_AUTO_MERGE_LABEL).toBe("oscar-factory:no-auto-merge");
+    expect(taskFromLabels(["oscar-factory:review", NO_AUTO_MERGE_LABEL])).toEqual({ ok: true, task: "review" });
+    expect(taskFromLabels([NO_AUTO_MERGE_LABEL])).toEqual({ ok: false, reason: null });
   });
 
   it("ignores tickets with no factory label", () => {
@@ -55,16 +61,21 @@ describe("skillsFor", () => {
 });
 
 describe("TASKS", () => {
-  it("gives implement the browser and lets it create or update the branch", () => {
-    expect(TASKS.implement).toMatchObject({ browser: true, branch: "optional" });
+  it("gives implement the browser and the stack, and lets it create or update the branch", () => {
+    expect(TASKS.implement).toMatchObject({ browser: true, stack: true, branch: "optional" });
   });
 
-  it("gives review no browser, and needs the branch on GitHub", () => {
-    expect(TASKS.review).toMatchObject({ browser: false, branch: "required" });
+  it("gives review no browser, the stack for specs, and needs the branch on GitHub", () => {
+    expect(TASKS.review).toMatchObject({ browser: false, stack: true, branch: "required" });
   });
 
-  it("gives explore the browser, origin/main only, and 20 minutes", () => {
-    expect(TASKS.explore).toMatchObject({ browser: true, branch: "none", timeLimitMinutes: 20 });
+  it("gives merge only the rules and its rubric: no browser, no stack, the branch read-only, and 10 minutes", () => {
+    expect(TASKS.merge).toMatchObject({ browser: false, stack: false, branch: "read", timeLimitMinutes: 10, docs: ["rubric.md"] });
+    expect(skillsFor("merge")).toEqual(["factory-rules"]);
+  });
+
+  it("gives explore the browser, the stack, origin/main only, and 20 minutes", () => {
+    expect(TASKS.explore).toMatchObject({ browser: true, stack: true, branch: "none", timeLimitMinutes: 20 });
     expect(skillsFor("explore")).toEqual(["factory-rules", "factory-stack"]);
   });
 });

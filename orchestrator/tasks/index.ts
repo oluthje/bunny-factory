@@ -3,8 +3,9 @@
 import type { Task } from "../src/task.ts";
 import { explore } from "./explore/index.ts";
 import { implement } from "./implement/index.ts";
+import { merge } from "./merge/index.ts";
 import { review } from "./review/index.ts";
 
-export type TaskName = "implement" | "review" | "explore";
+export type TaskName = "implement" | "review" | "explore" | "merge";
 
-export const TASKS: Record<TaskName, Task> = { implement, review, explore };
+export const TASKS: Record<TaskName, Task> = { implement, review, explore, merge };

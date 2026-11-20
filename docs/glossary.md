@@ -12,7 +12,7 @@ A system of agents that turns tickets, PRs and schedules into merged code, deplo
 ## Tasks and runs
 
 **Task**:
-A kind of work the factory performs, defined once and run many times: review, explore, implement, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
+A kind of work the factory performs, defined once and run many times: explore, implement, review, merge, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
 _Avoid_: job, workflow, action
 
 **Trigger**:
@@ -66,6 +66,12 @@ A human reads the PR before it merges. What it catches becomes new automated che
 
 **Throttle**:
 A limit on how often a trigger fires (one bug report in ten, a clock once a day). Opened as the brakes earn trust.
+
+**Merge check**:
+The merge task's gate before any merge: an agent judges whether each of the ticket's PRs is an easy call, then the orchestrator's own checks (CI green, mergeable, not into production, unchanged since judged) must pass too. All of a ticket's PRs merge, or none.
+
+**Dry run**:
+The factory doing everything a merge needs except merging, and saying what it would merge. On until `FACTORY_MERGE_DRY_RUN` is `false`.
 
 **Loop cap**:
 The maximum number of tries in a loop of runs before a human must step in.

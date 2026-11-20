@@ -17,20 +17,31 @@ import { finished, nextTask, type RunEnd } from "./transitions.ts";
  * - `docs`: files in the task's folder that its prompt points at, uploaded beside the prompt to
  *   `{{runDir}}/<file>`. The agent reads one when its step comes up, so it stays out of the prompt.
  * - `browser`: the Playwright MCP server, for checking and capturing the UI.
+ * - `stack`: the catch-up before Claude starts (gems, npm, migrations, the running Bunny stack).
+ *   A task that only reads code goes without, and starts minutes sooner.
  * - `branch`: the ticket's branch. `optional` builds on it where it's on GitHub and branches from
- *   main where it isn't; `required` fails the run when no repo has it on GitHub; `none` never
+ *   main where it isn't; `required` fails the run when no repo has it on GitHub; `read` is
+ *   `required` that never pushes, so whatever the agent commits stays on the runner; `none` never
  *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
- * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs.
+ * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs, or
+ *   a `Stop` to end the run there, with no runner.
  */
 export type Task = {
   skills: readonly string[];
   docs: readonly string[];
   browser: boolean;
-  branch: "optional" | "required" | "none";
+  stack: boolean;
+  branch: "optional" | "required" | "read" | "none";
   timeLimitMinutes: number | null;
-  prepare: (ctx: RunContext) => Promise<Prepared>;
+  prepare: (ctx: RunContext) => Promise<Prepared | Stop>;
 };
+
+/**
+ * What `prepare` returns to end the run before the runner exists, when there is nothing for an
+ * agent to do: the engine `finish`es the run with it and starts no runner.
+ */
+export type Stop = { stop: { end: RunEnd; text: string; record?: Parameters<typeof updateRun>[1] } };
 
 export type Step = GetStepTools<typeof inngest>;
 
@@ -101,13 +112,13 @@ export function passResult<R extends Parsed>(passError: string | null, reparse: 
   return passError ? { ok: false, error: passError } : reparse();
 }
 
-export const prRef = (u: string) => `[${u.replace("https://github.com/", "").replace("/pull/", "#")}](${u})`;
-export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+// Pure helpers, kept in logic.ts so pure modules can use them without the database.
+export { plural, prRef } from "./logic.ts";
 
 /** The end of the run's Linear report: what the ticket's labels now ask for. */
 function handoffLine(end: RunEnd): string {
   const next = nextTask(end);
-  return next ? `Handing off: \`${taskLabel(next)}\` queued.` : "Waiting on Oscar.";
+  return next === "human" ? "Waiting on Oscar." : next === "done" ? "Done: nothing waits on Oscar." : `Handing off: \`${taskLabel(next)}\` queued.`;
 }
 
 /**

@@ -15,6 +15,7 @@ export const explore: Task = {
   skills: ["factory-rules", "factory-stack"],
   docs: [],
   browser: true,
+  stack: true,
   branch: "none",
   timeLimitMinutes: 20,
   prepare,

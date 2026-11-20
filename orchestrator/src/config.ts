@@ -18,6 +18,11 @@ export const config = {
   repos: (process.env.FACTORY_REPOS ?? "api,app,portal,kong").split(","),
   baseBranch: "main",
   draftPrs: (process.env.FACTORY_DRAFT_PRS ?? "true") === "true",
+  /**
+   * The factory says which PRs it would merge, and merges none. Anything but "false" keeps it on,
+   * so a typo never starts merging.
+   */
+  mergeDryRun: (process.env.FACTORY_MERGE_DRY_RUN ?? "true") !== "false",
 
   snapshot: () => required("FACTORY_SNAPSHOT"),
   claudeSecret: process.env.CLAUDE_SECRET ?? "claude-oauth-token",

@@ -93,3 +93,8 @@ export async function uploadFile(data: Buffer, filename: string, contentType: st
   if (!res.ok) throw new Error(`upload of ${filename} failed: ${res.status} ${await res.text()}`);
   return target.assetUrl;
 }
+
+/** The ticket's labels now, by name: the poller's copy may be minutes old by the time a run ends. */
+export async function ticketLabels(ticketId: string): Promise<string[]> {
+  return (await (await linear().issue(ticketId)).labels()).nodes.map((l) => l.name);
+}

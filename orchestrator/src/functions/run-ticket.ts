@@ -80,7 +80,7 @@ export const runTicket = inngest.createFunction(
       await step.run("delete-leftover-sandbox", () => deleteSandbox(sandboxName(ticket.identifier, runId)));
       await step.run("mark-stopped", async () => {
         closeIfOpen(runId, "failed");
-        await applyLabels(ticket.id, finished(task, { status: "failed", next: null }));
+        await applyLabels(ticket.id, finished(task, { status: "failed", next: "human" }));
       });
     },
   },
@@ -96,6 +96,8 @@ export const runTicket = inngest.createFunction(
       // 1. Bundles of an up-to-date main, built from the orchestrator's mirrors, plus the ticket's branch
       // from every repo that has it on GitHub, unless the task never touches it.
       const usesBranch = settings.branch !== "none";
+      // Only a task that builds on the branch pushes: `read` checks it out, and anything committed stays on the runner.
+      const pushes = settings.branch === "optional" || settings.branch === "required";
       const { baseShas, heads } = await step.run("bundle-main", async () => {
         const shas: Record<string, string> = {};
         const found: Record<string, string> = {};
@@ -107,7 +109,7 @@ export const runTicket = inngest.createFunction(
         return { baseShas: shas, heads: found };
       });
       const onGitHub = Object.keys(heads);
-      if (settings.branch === "required" && onGitHub.length === 0) {
+      if ((settings.branch === "required" || settings.branch === "read") && onGitHub.length === 0) {
         throw new Error(`Nothing to ${task}: no repo has the branch \`${branch}\` on GitHub.`);
       }
 
@@ -121,8 +123,14 @@ export const runTicket = inngest.createFunction(
         return found;
       });
 
-      // 1b. The task's own inputs, gathered before the sandbox exists.
+      // 1b. The task's own inputs, gathered before the sandbox exists. The task may end the run
+      // here instead, when there is nothing for an agent to do.
       const prepared = await settings.prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes, heads, openPrs });
+      if ("stop" in prepared) {
+        const { end, text, record } = prepared.stop;
+        await step.run("stop-before-runner", () => finish({ runId, ticketId: ticket.id, end, text, record: record ?? {} }));
+        return { status: end.status, prUrls: [], baseShas };
+      }
       const { pass } = prepared;
 
       // 2. The sandbox. Looked up by name first so a retried step doesn't create a second one.
@@ -179,29 +187,33 @@ export const runTicket = inngest.createFunction(
         );
       });
 
-      // 4. Catch-up: gems, npm, migrations, then the stack. Runs in the background and is polled.
-      // Inngest replays this function for every step, so wall-clock times are taken inside steps.
-      const catchUp = await step.run("start-catch-up", async () => ({
-        startedAt: Date.now(),
-        cmdId: await startBackground(
-          await getSandbox(id),
-          "catch-up",
-          `set -o pipefail; { bunny-stack up && bunny-stack run api env RAILS_ENV=test bin/rails db:prepare && bunny-stack smoke; } > ${ARTIFACTS}/catch-up.log 2>&1`,
-        ),
-      }));
-      let catchUpExit: number | null = null;
-      for (let i = 0; catchUpExit === null && i < 80; i++) {
-        await step.sleep(`catch-up-wait-${i}`, "15s");
-        catchUpExit = await step.run(`catch-up-poll-${i}`, async () =>
-          exitCodeOf(await getSandbox(id), "catch-up", catchUp.cmdId),
+      // 4. Catch-up: gems, npm, migrations, then the stack, for a task that uses it. Runs in the
+      // background and is polled. Inngest replays this function for every step, so wall-clock
+      // times are taken inside steps. Flipping a task's `stack` changes its steps: deploy that with
+      // none of its runs in flight (coding standards, rule 9).
+      if (settings.stack) {
+        const catchUp = await step.run("start-catch-up", async () => ({
+          startedAt: Date.now(),
+          cmdId: await startBackground(
+            await getSandbox(id),
+            "catch-up",
+            `set -o pipefail; { bunny-stack up && bunny-stack run api env RAILS_ENV=test bin/rails db:prepare && bunny-stack smoke; } > ${ARTIFACTS}/catch-up.log 2>&1`,
+          ),
+        }));
+        let catchUpExit: number | null = null;
+        for (let i = 0; catchUpExit === null && i < 80; i++) {
+          await step.sleep(`catch-up-wait-${i}`, "15s");
+          catchUpExit = await step.run(`catch-up-poll-${i}`, async () =>
+            exitCodeOf(await getSandbox(id), "catch-up", catchUp.cmdId),
+          );
+        }
+        if (catchUpExit !== 0) {
+          throw new Error(`catch-up ${catchUpExit === null ? "timed out" : `exited ${catchUpExit}`}; see catch-up.log`);
+        }
+        await step.run("record-catch-up", () =>
+          updateRun(runId, { catchUpSeconds: Math.round((Date.now() - catchUp.startedAt) / 1000) }),
         );
       }
-      if (catchUpExit !== 0) {
-        throw new Error(`catch-up ${catchUpExit === null ? "timed out" : `exited ${catchUpExit}`}; see catch-up.log`);
-      }
-      await step.run("record-catch-up", () =>
-        updateRun(runId, { catchUpSeconds: Math.round((Date.now() - catchUp.startedAt) / 1000) }),
-      );
 
       // 5. Claude, headless, in the background, with the Playwright browser if the task gets one.
       const mcp = settings.browser ? `--mcp-config ${RUN_DIR}/mcp.json ` : "";
@@ -291,7 +303,7 @@ export const runTicket = inngest.createFunction(
 
       // 7. Artifacts out, the task's files, plus a bundle per repo with new commits: since the
       // branch's head on GitHub, or since main where it isn't there yet; none for a task that never
-      // touches the branch. Happens on success, failure and timeout.
+      // pushes. Happens on success, failure and timeout.
       const changed = await step.run("collect", async () => {
         const sb = await getSandbox(id);
         const out = await sh(
@@ -302,7 +314,7 @@ export const runTicket = inngest.createFunction(
              git status --short > ${ARTIFACTS}/git-status-$r.txt
              start=origin/${config.baseBranch}
              git rev-parse -q --verify refs/remotes/origin/${shQuote(branch)} >/dev/null && start=origin/${shQuote(branch)}
-             n=${usesBranch ? `$(git rev-list --count "$start"..${shQuote(branch)})` : "0"}
+             n=${pushes ? `$(git rev-list --count "$start"..${shQuote(branch)})` : "0"}
              [ "$n" -gt 0 ] && git bundle create -q ${RUN_DIR}/out/$r.bundle origin/${config.baseBranch}..${shQuote(branch)} 2>/dev/null
              echo "$r $n"
            done
@@ -361,7 +373,7 @@ export const runTicket = inngest.createFunction(
         finish({
           runId,
           ticketId: ticket.id,
-          end: { status: "failed", next: null },
+          end: { status: "failed", next: "human" },
           text: `The run failed:\n\n\`\`\`\n${message.slice(0, 1500)}\n\`\`\``,
           record: { error: message },
         }),
