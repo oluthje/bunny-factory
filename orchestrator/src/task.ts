@@ -21,7 +21,8 @@ import { finished, nextTask, type RunEnd } from "./transitions.ts";
  *   main where it isn't; `required` fails the run when no repo has it on GitHub; `none` never
  *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
- * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs.
+ * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs, or
+ *   a `Stop` to end the run there, with no runner.
  */
 export type Task = {
   skills: readonly string[];
@@ -29,8 +30,14 @@ export type Task = {
   browser: boolean;
   branch: "optional" | "required" | "none";
   timeLimitMinutes: number | null;
-  prepare: (ctx: RunContext) => Promise<Prepared>;
+  prepare: (ctx: RunContext) => Promise<Prepared | Stop>;
 };
+
+/**
+ * What `prepare` returns to end the run before the runner exists, when there is nothing for an
+ * agent to do: the engine `finish`es the run with it and starts no runner.
+ */
+export type Stop = { stop: { end: RunEnd; text: string; record?: Parameters<typeof updateRun>[1] } };
 
 export type Step = GetStepTools<typeof inngest>;
 
