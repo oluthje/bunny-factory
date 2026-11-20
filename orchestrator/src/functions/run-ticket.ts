@@ -11,13 +11,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.ts";
-import { closeIfOpen, updateRun } from "../db/index.ts";
+import { closeIfOpen, getFactoryState, updateRun } from "../db/index.ts";
 import { bundleForRun, importAndPush } from "../git.ts";
 import { commitIdentity, findOpenPr } from "../github.ts";
 import { RunHeartbeat } from "../heartbeat.ts";
-import { inngest, RUN_REQUESTED } from "../inngest.ts";
+import { inngest, RUN_REQUESTED, RUN_STOP } from "../inngest.ts";
 import { applyLabels } from "../linear.ts";
-import { parseChangedRepos, sandboxName, shQuote, type Ticket } from "../logic.ts";
+import { mayStartRuns, parseChangedRepos, sandboxName, shQuote, type Ticket } from "../logic.ts";
 import { buildPrompt, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../prompt.ts";
 import { ARTIFACTS, EVIDENCE_DIR, HOME, RUN_DIR } from "../runner-paths.ts";
 import {
@@ -32,7 +32,7 @@ import {
 } from "../sandbox.ts";
 import { STRUCTURED_RETRIES } from "../structured.ts";
 import { skillsFor, TASKS, type TaskName } from "../tasks.ts";
-import { finish, type Pass } from "../task.ts";
+import { finish, requeue, type Pass } from "../task.ts";
 import { finished } from "../transitions.ts";
 
 /** The structured-output pass's `claude --output-format json` result. */
@@ -83,6 +83,8 @@ export const runTicket = inngest.createFunction(
     concurrency: { limit: config.maxRuns },
     // Records a heartbeat on every call, so sweep-runs can tell a run Inngest has lost.
     middleware: [RunHeartbeat],
+    // `factory stop --now` closes the run's record and moves its labels itself, then cancels it here.
+    cancelOn: [{ event: RUN_STOP, match: "data.runId" }],
     retries: 2,
     onFailure: async ({ event, step }) => {
       // Backstop: the run's own cleanup normally does this. The record is closed first, or the
@@ -144,10 +146,22 @@ export const runTicket = inngest.createFunction(
       }
       const { pass } = prepared;
 
-      // 2. The sandbox. Looked up by name first so a retried step doesn't create a second one.
+      // 1c. `factory stop` drains: a run with no runner yet ends here, cancelled, and its ticket stays
+      // queued. Checked again here, not only by the poller, since a run may wait in Inngest's queue.
+      const may = await step.run("may-start-runner", () => mayStartRuns(config.poll, getFactoryState().state));
+      if (!may) {
+        await step.run("requeue", () =>
+          requeue({ runId, ticketId: ticket.id, text: "The factory was stopped before this run got a runner." }),
+        );
+        return { status: "cancelled" as const, prUrls: [], baseShas };
+      }
+
+      // 2. The sandbox. Looked up by name first so a retried step doesn't create a second one; one a
+      // cut-off attempt left half-created is waited for.
       sandboxId = await step.run("create-sandbox", async () => {
         const name = sandboxName(ticket.identifier, runId);
         const existing = await getSandbox(name).catch(() => null);
+        if (existing) await existing.waitUntilStarted(300);
         const id = existing?.id ?? (await createSandbox(name, runId, timeLimitMinutes + RUN_OVERHEAD_MINUTES));
         updateRun(runId, { status: "running", sandboxId: id, snapshot: config.snapshot(), branch });
         return id;

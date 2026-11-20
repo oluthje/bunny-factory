@@ -79,6 +79,11 @@ The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has los
 - Every call Inngest makes to a run records a heartbeat on the run's row. If a run in flight has no heartbeat for 30 minutes, the sweeper deletes its sandbox and closes the run as failed, and the ticket goes to `oscar-factory:human-needed`.
 - It also deletes any factory sandbox whose run has finished. It leaves alone sandboxes of runs it doesn't know, since another orchestrator may share the Daytona account.
 - It doesn't collect artifacts from these sandboxes.
+- It prunes run folders on the volume (see _Observability and retention_), and keeps running while the factory is stopped.
+
+**Starting and stopping.** A `factory_state` row in SQLite says whether the factory takes new runs; `factory stop` and `factory start` set it (the root `README.md` documents the CLI). The poller checks it every tick, and each run checks it again just before creating its sandbox. A machine starts runs only when the state allows it and its `FACTORY_POLL` secret is `on`, which only Fly has. A run the factory stops itself, by draining or by `stop --now`, ends `cancelled`, keeps its task label, and doesn't count toward the loop cap.
+
+**Deploys.** Every push to `main` runs the checks and deploys to Fly with GitHub Actions, then resyncs Inngest Cloud. A deploy goes out with runs in flight, and Inngest retries the step the restart cut off, so every step of a run is safe to run twice.
 
 ## Warm snapshot
 
@@ -102,7 +107,7 @@ The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has los
   - catch-up time
   - exit code and duration
   - the PR it produced
-- Run folders are kept for 30 days. SQLite rows are kept forever.
+- Run folders are kept for 30 days. When under 20% of the volume is free, `sweep-runs` deletes the oldest until 25% is, never a run in flight's. SQLite rows are kept forever.
 - The Inngest dashboard covers orchestration: steps, retries and failures.
 
 ## Known follow-ups

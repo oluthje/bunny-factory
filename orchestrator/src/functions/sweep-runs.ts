@@ -4,10 +4,14 @@
 // - A run in flight whose heartbeat (heartbeat.ts) is older than LOST_AFTER_MINUTES is closed as
 //   failed: its sandbox deleted, the ticket told, and its labels moved on to human-needed.
 // - A factory sandbox whose run this orchestrator has finished is deleted: a run's own delete failed.
-// The pure decisions are `isLostRun` and `leftoverSandboxes` in logic.ts.
+// - Run folders on the data volume are pruned: older than 30 days, or oldest first while the volume
+//   is short of space. Never a run in flight's, the mirrors or factory.db; SQLite rows are kept.
+// It keeps running while the factory is stopped (`factory stop`).
+// The pure decisions are `isLostRun`, `leftoverSandboxes` and `runFoldersToPrune` in logic.ts.
 import { runsOpen, runStatuses } from "../db/index.ts";
+import { deleteRunFolder, runFolders, volumeSpace } from "../disk.ts";
 import { inngest } from "../inngest.ts";
-import { isLostRun, leftoverSandboxes, sandboxName } from "../logic.ts";
+import { isLostRun, leftoverSandboxes, runFoldersToPrune, sandboxName } from "../logic.ts";
 import { deleteSandbox, listFactorySandboxes } from "../sandbox.ts";
 import { finish } from "../task.ts";
 
@@ -48,6 +52,13 @@ export const sweepRuns = inngest.createFunction(
       await step.run(`delete-${sb.name}`, () => deleteSandbox(sb.id));
     }
 
-    return { closed: lost.map((r) => r.identifier), deleted: leftovers.map((s) => s.name) };
+    const pruned = await step.run("prune-run-folders", async () => {
+      const inFlight = new Set(runsOpen().map((r) => r.id));
+      const ids = runFoldersToPrune(await runFolders(), inFlight, volumeSpace(), new Date());
+      for (const id of ids) deleteRunFolder(id);
+      return ids.length;
+    });
+
+    return { closed: lost.map((r) => r.identifier), deleted: leftovers.map((s) => s.name), pruned };
   },
 );

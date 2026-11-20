@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# The factory CLI: status, start, stop and stop --now on the Fly machine. Each command runs
+# orchestrator/scripts/factory.ts inside the machine, over `fly ssh console`, against its SQLite.
+# Symlink it onto your PATH: ln -s "$PWD/bin/factory" ~/.local/bin/factory. See README.md.
+set -euo pipefail
+
+case "${1:-} ${2:-}" in
+  "status "|"start "|"stop "|"stop --now") ;;
+  *) echo "Usage: factory status | start | stop | stop --now" >&2; exit 2 ;;
+esac
+
+exec fly ssh console -a oscar-bunny-factory -C "node /app/scripts/factory.ts $*"

@@ -77,9 +77,14 @@ export async function download(sb: Sandbox, remote: string, local: string): Prom
 /**
  * Starts a long command in its own background session, writing its output to a log file.
  * Returns the command id; poll it with `exitCodeOf`.
+ * Safe to repeat, as a step retried after a deploy cut it off does: a session that already ran its
+ * command returns that command's id rather than starting a second one.
  */
 export async function startBackground(sb: Sandbox, sessionId: string, cmd: string): Promise<string> {
-  await sb.process.createSession(sessionId);
+  const existing = await sb.process.getSession(sessionId).catch(() => null);
+  const started = existing?.commands?.at(-1);
+  if (started) return started.id;
+  if (!existing) await sb.process.createSession(sessionId);
   const res = await sb.process.executeSessionCommand(sessionId, { command: asDaytona(cmd), runAsync: true });
   if (!res.cmdId) throw new Error(`no command id for session ${sessionId}`);
   return res.cmdId;
@@ -89,4 +94,10 @@ export async function startBackground(sb: Sandbox, sessionId: string, cmd: strin
 export async function exitCodeOf(sb: Sandbox, sessionId: string, cmdId: string): Promise<number | null> {
   const c = await sb.process.getSessionCommand(sessionId, cmdId);
   return c.exitCode ?? null;
+}
+
+/** When the snapshot runs start from was built. */
+export async function snapshotCreatedAt(name: string): Promise<string> {
+  const snap = await daytona().snapshot.get(name);
+  return new Date(snap.createdAt).toISOString();
 }

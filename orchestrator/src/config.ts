@@ -35,6 +35,16 @@ export const config = {
    */
   maxRuns: Number(process.env.FACTORY_MAX_RUNS ?? 3),
 
+  /**
+   * `on` lets this machine start runs; anything else, or unset, starts none. Set only as a Fly
+   * secret, so a laptop never starts runs. `factory stop` (scripts/factory.ts) stops a machine that has it.
+   */
+  poll: process.env.FACTORY_POLL,
+  /** The commit the image was built from, and when it was deployed: set by the Dockerfile. */
+  deploy: { commit: process.env.FACTORY_COMMIT ?? null, at: process.env.FACTORY_DEPLOYED_AT ?? null },
+  /** The day GH_TOKEN, a fine-grained PAT, expires (docs/services.md, decision 7). */
+  patExpires: process.env.GH_TOKEN_EXPIRES ?? "2026-12-17",
+
   ghToken: () => required("GH_TOKEN"),
   linearApiKey: () => required("LINEAR_API_KEY"),
   daytonaApiKey: () => required("DAYTONA_API_KEY"),

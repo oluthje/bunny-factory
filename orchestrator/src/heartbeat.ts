@@ -1,8 +1,9 @@
 // Inngest middleware on run-ticket: every call Inngest makes to the run's function (each step, each
 // wake from a sleep) records a heartbeat on the run's row. sweep-runs (functions/sweep-runs.ts)
-// closes a run in flight whose heartbeat has gone quiet: Inngest has lost it.
+// closes a run in flight whose heartbeat has gone quiet: Inngest has lost it. Each step the run
+// starts is recorded too, for `factory status`.
 import { Middleware } from "inngest";
-import { heartbeat } from "./db/index.ts";
+import { heartbeat, recordStep } from "./db/index.ts";
 
 export class RunHeartbeat extends Middleware.BaseMiddleware {
   readonly id = "run-heartbeat";
@@ -12,5 +13,10 @@ export class RunHeartbeat extends Middleware.BaseMiddleware {
     const runId = (arg.ctx.event.data as { runId?: unknown } | undefined)?.runId;
     if (typeof runId === "string") heartbeat(runId);
     return arg;
+  }
+
+  override onStepStart(arg: Middleware.OnStepStartArgs): void {
+    const runId = (arg.ctx.event.data as { runId?: unknown } | undefined)?.runId;
+    if (typeof runId === "string") recordStep(runId, arg.stepInfo.options.id);
   }
 }

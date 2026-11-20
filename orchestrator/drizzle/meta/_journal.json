@@ -29,6 +29,13 @@
       "when": 1795207822977,
       "tag": "0003_run_heartbeat",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1795209743088,
+      "tag": "0004_factory_state",
+      "breakpoints": true
     }
   ]
 }

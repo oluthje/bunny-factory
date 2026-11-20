@@ -19,5 +19,6 @@ Each task's prompt, `orchestrator/tasks/<task>/prompt.md`, is its run's one entr
 
 ## Docs
 
+- [README.md](README.md): operating the factory on Fly: the `factory` CLI (`status`, `start`, `stop`), deploys, disk pruning and the cutover.
 - [docs/services.md](docs/services.md): which product fills each service slot, and how a run flows through them.
 - [docs/daytona-stack-best-practices.md](docs/daytona-stack-best-practices.md): research notes on running a full web-app dev stack in Daytona sandboxes for coding agents.

@@ -3,12 +3,12 @@
 // run reports its end. Every task supplies every field here; none is one task's alone.
 import type { GetStepTools } from "inngest";
 import type { TaskName } from "../tasks/index.ts";
-import { runTask, updateRun } from "./db/index.ts";
+import { closeIfOpen, runStatus, runTask, updateRun } from "./db/index.ts";
 import type { inngest } from "./inngest.ts";
 import { taskLabel } from "./labels.ts";
 import { applyLabels, comment } from "./linear.ts";
 import { linearComment, type Ticket } from "./logic.ts";
-import { finished, nextTask, type RunEnd } from "./transitions.ts";
+import { finished, nextTask, requeued, type RunEnd } from "./transitions.ts";
 
 /**
  * A task: what a run of it gets on the runner, and its part of the run.
@@ -124,6 +124,11 @@ function handoffLine(end: RunEnd): string {
 /**
  * Records the run's end, reports on the ticket, then moves its labels on. The record goes first:
  * the poller only picks up a ticket with no run in flight.
+ *
+ * A run already cancelled is left as it is: `factory stop --now` (`requeue`) or run-cancelled has
+ * closed it and moved its labels, and a step still in flight when it was cancelled mustn't undo
+ * that. `finish` itself never records `cancelled`, so its own retry after a partial failure still
+ * comments and moves the labels.
  */
 export async function finish(args: {
   runId: string;
@@ -135,7 +140,21 @@ export async function finish(args: {
   tag?: string;
 }): Promise<void> {
   const { runId, ticketId, end, text, record, tag } = args;
+  if (end.status !== "cancelled" && runStatus(runId) === "cancelled") return;
   updateRun(runId, { ...record, status: end.status, finishedAt: new Date().toISOString() });
   await comment(ticketId, linearComment(`${text}\n\n${handoffLine(end)}`, runId, tag));
   await applyLabels(ticketId, finished(runTask(runId) as TaskName, end));
+}
+
+/**
+ * The factory stopped the run itself (`factory stop` before it had a runner, or `stop --now`):
+ * records it cancelled, says so on the ticket, and queues its task again (`requeued`), so it starts
+ * over when the factory starts. A cancelled run doesn't count toward the loop cap (`countRuns`).
+ * Safe to repeat: the record closes once, and the labels change only what's still to change.
+ */
+export async function requeue(args: { runId: string; ticketId: string; text: string }): Promise<void> {
+  const { runId, ticketId, text } = args;
+  closeIfOpen(runId, "cancelled");
+  await comment(ticketId, linearComment(`${text}\n\nThe ticket stays queued: the run starts again when the factory starts.`, runId));
+  await applyLabels(ticketId, requeued(runTask(runId) as TaskName));
 }

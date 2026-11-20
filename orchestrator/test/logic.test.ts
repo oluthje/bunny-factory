@@ -9,6 +9,9 @@ import {
   inlineEvidence,
   isFactoryComment,
   isLostRun,
+  mayStartRuns,
+  factoryMode,
+  runFoldersToPrune,
   leftoverSandboxes,
   linearComment,
   parseChangedRepos,
@@ -194,5 +197,88 @@ describe("leftoverSandboxes", () => {
     ];
     const statuses = { r1: "failed", r2: "running", r3: "requested" };
     expect(leftoverSandboxes(sandboxes, statuses)).toEqual(["done"]);
+  });
+});
+
+describe("mayStartRuns", () => {
+  it("starts runs only when FACTORY_POLL is on and the factory is running", () => {
+    expect(mayStartRuns("on", "running")).toBe(true);
+  });
+
+  it("starts nothing on a machine without FACTORY_POLL=on, such as a laptop", () => {
+    expect(mayStartRuns(undefined, "running")).toBe(false);
+    expect(mayStartRuns("off", "running")).toBe(false);
+    expect(mayStartRuns("ON", "running")).toBe(false);
+  });
+
+  it("starts nothing once the factory is stopped", () => {
+    expect(mayStartRuns("on", "stopped")).toBe(false);
+  });
+});
+
+describe("factoryMode", () => {
+  it("is running while the factory takes new runs, however many are in flight", () => {
+    expect(factoryMode("running", 0)).toBe("running");
+    expect(factoryMode("running", 3)).toBe("running");
+  });
+
+  it("is draining once stopped while runs are still in flight", () => {
+    expect(factoryMode("stopped", 2)).toBe("draining");
+  });
+
+  it("is stopped once the last run has finished", () => {
+    expect(factoryMode("stopped", 0)).toBe("stopped");
+  });
+});
+
+describe("runFoldersToPrune", () => {
+  const now = new Date("2026-11-20T12:00:00.000Z");
+  const daysAgo = (d: number) => now.getTime() - d * 86_400_000;
+  const GB = 1024 ** 3;
+  const roomy = { total: 40 * GB, free: 30 * GB };
+
+  it("deletes folders of runs older than 30 days and keeps the rest", () => {
+    const folders = [
+      { id: "old", at: daysAgo(31), bytes: GB },
+      { id: "recent", at: daysAgo(29), bytes: GB },
+    ];
+    expect(runFoldersToPrune(folders, new Set(), roomy, now)).toEqual(["old"]);
+  });
+
+  it("never deletes the folder of a run in flight, however old", () => {
+    const folders = [{ id: "stuck", at: daysAgo(40), bytes: GB }];
+    expect(runFoldersToPrune(folders, new Set(["stuck"]), roomy, now)).toEqual([]);
+  });
+
+  it("below 20% free, deletes the oldest folders until 25% is free", () => {
+    // 40 GB volume, 6 GB free (15%): 10 GB free (25%) needs 4 GB more.
+    const folders = [
+      { id: "c", at: daysAgo(3), bytes: 3 * GB },
+      { id: "a", at: daysAgo(10), bytes: 2 * GB },
+      { id: "b", at: daysAgo(5), bytes: 1 * GB },
+      { id: "d", at: daysAgo(1), bytes: 3 * GB },
+    ];
+    expect(runFoldersToPrune(folders, new Set(), { total: 40 * GB, free: 6 * GB }, now)).toEqual(["a", "b", "c"]);
+  });
+
+  it("at 20% free or more, deletes no folder younger than 30 days", () => {
+    const folders = [{ id: "a", at: daysAgo(10), bytes: 2 * GB }];
+    expect(runFoldersToPrune(folders, new Set(), { total: 40 * GB, free: 8 * GB }, now)).toEqual([]);
+  });
+
+  it("counts what the age limit frees toward the 25%", () => {
+    const folders = [
+      { id: "old", at: daysAgo(31), bytes: 4 * GB },
+      { id: "young", at: daysAgo(2), bytes: 1 * GB },
+    ];
+    expect(runFoldersToPrune(folders, new Set(), { total: 40 * GB, free: 6 * GB }, now)).toEqual(["old"]);
+  });
+
+  it("skips runs in flight when freeing space, and stops when nothing else is left", () => {
+    const folders = [
+      { id: "busy", at: daysAgo(9), bytes: 5 * GB },
+      { id: "a", at: daysAgo(4), bytes: 1 * GB },
+    ];
+    expect(runFoldersToPrune(folders, new Set(["busy"]), { total: 40 * GB, free: 2 * GB }, now)).toEqual(["a"]);
   });
 });
