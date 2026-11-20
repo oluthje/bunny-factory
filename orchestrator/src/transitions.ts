@@ -8,6 +8,7 @@
 //        │ finished: both labels off, then
 //        ├─ succeeded, and the task names a next one ──▶ oscar-factory:<next>   (queued again)
 //        ├─ succeeded, and the task says done ─────────▶ no factory label       (nothing waits)
+//        ├─ the factory stopped it (`factory stop`) ───▶ oscar-factory:<task>   (requeued: in-progress off only)
 //        └─ otherwise ─────────────────────────────────▶ oscar-factory:human-needed
 //
 // The task label stays on through the run so Linear shows which stage the ticket is in; the poller
@@ -51,6 +52,15 @@ export function pickedUp(): LabelChange {
 /** The poller won't start the task: the loop cap is reached. */
 export function refused(task: TaskName): LabelChange {
   return { add: [HUMAN_NEEDED_LABEL], remove: [taskLabel(task)] };
+}
+
+/**
+ * The factory stopped the run itself (`factory stop`, or `stop --now`): in-progress off and the
+ * task label on, so the ticket is queued again and the run starts over once the factory starts.
+ * The task label is added as well as kept, in case anything took it off meanwhile.
+ */
+export function requeued(task: TaskName): LabelChange {
+  return { add: [taskLabel(task)], remove: [IN_PROGRESS_LABEL] };
 }
 
 /**

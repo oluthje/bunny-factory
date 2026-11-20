@@ -1,0 +1,36 @@
+# The orchestrator on Fly.io: one always-on machine with the data volume. Exactly one machine,
+# never more: SQLite and the in-process mirror locks (src/git.ts) need a single process, so every
+# deploy passes --ha=false. Secrets (the names in .env.example, plus FACTORY_POLL=on and
+# DATA_DIR=/data) are set with `fly secrets set`; see scripts/fly-cutover.sh.
+app = "oscar-bunny-factory"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  # Inngest Cloud calls the functions here; behind Fly's proxy the SDK can't tell it's https.
+  INNGEST_SERVE_ORIGIN = "https://oscar-bunny-factory.fly.dev"
+
+[[mounts]]
+  source = "factory_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

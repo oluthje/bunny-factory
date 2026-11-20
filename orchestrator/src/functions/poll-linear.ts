@@ -1,7 +1,7 @@
 import { config } from "../config.ts";
-import { countRuns, getCursor, recordRun, runsInFlight, setCursor, ticketRunInFlight } from "../db/index.ts";
+import { countRuns, getCursor, getFactoryState, recordPoll, recordRun, runsInFlight, setCursor, ticketRunInFlight } from "../db/index.ts";
 import { applyLabels, comment, fetchOptedInTickets } from "../linear.ts";
-import { cursorAfterPoll, decideRuns, linearComment, selectNewTickets } from "../logic.ts";
+import { cursorAfterPoll, decideRuns, linearComment, mayStartRuns, selectNewTickets } from "../logic.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
 import { taskFromLabels } from "../tasks.ts";
 import { LOOP_CAP, pickedUp, refused } from "../transitions.ts";
@@ -20,13 +20,23 @@ const CURSOR = "linear.updatedAt";
  *   cursor stops short of the first of them, so a later poll fetches them again. Inngest can't hold
  *   runs apart (see runTicket).
  * - Past the loop cap the task isn't started, and the ticket waits on Oscar.
+ * - Only a machine with FACTORY_POLL=on, while the factory is running (`factory start` / `stop`),
+ *   polls at all. Otherwise it fetches nothing and leaves the cursor, so the next poll that may
+ *   start runs fetches every ticket that changed meanwhile.
  * A ticket with an unknown or ambiguous factory label is skipped and reported in this function's
  * output, not on the ticket: a comment would bump `updatedAt` and bring it back every poll.
  */
 export const pollLinear = inngest.createFunction(
   { id: "poll-linear", triggers: [{ cron: "* * * * *" }], concurrency: { limit: 1 } },
   async ({ step }) => {
-    const tickets = await step.run("fetch-tickets", () => fetchOptedInTickets(getCursor(CURSOR)));
+    const mayStart = await step.run("may-start-runs", () => mayStartRuns(config.poll, getFactoryState().state));
+    if (!mayStart) return { polled: false };
+
+    const tickets = await step.run("fetch-tickets", async () => {
+      const found = await fetchOptedInTickets(getCursor(CURSOR));
+      recordPoll();
+      return found;
+    });
     const fresh = selectNewTickets(tickets, (t) => ticketRunInFlight(t.id));
     const choices = fresh.map((ticket) => ({ ticket, choice: taskFromLabels(ticket.labels) }));
     const skipped = choices.flatMap(({ ticket, choice }) =>

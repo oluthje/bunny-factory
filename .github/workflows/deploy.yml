@@ -1,0 +1,45 @@
+# Deploys the orchestrator to Fly.io on every push to main: checks first, then the deploy, then
+# Inngest Cloud resyncs. Deploys queue behind each other and never cancel one another. A deploy
+# goes out with runs in flight: Inngest retries the step the restart cut off.
+name: Deploy orchestrator
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-orchestrator
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orchestrator
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: orchestrator/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly
+        run: >
+          flyctl deploy --remote-only --ha=false
+          --build-arg FACTORY_COMMIT=${{ github.sha }}
+          --build-arg FACTORY_DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Resync Inngest Cloud
+        run: curl --fail --silent --show-error -X PUT https://oscar-bunny-factory.fly.dev/api/inngest

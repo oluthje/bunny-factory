@@ -1,0 +1,5 @@
+# The data folder is 20+ GB of mirrors and run folders: it never goes into the image.
+data
+node_modules
+.env
+*.log

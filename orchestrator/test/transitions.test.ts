@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL } from "../src/labels.ts";
-import { finished, nextTask, pickedUp, refused, type RunEnd } from "../src/transitions.ts";
+import { finished, nextTask, pickedUp, refused, requeued, type RunEnd } from "../src/transitions.ts";
 
 const end = (over: Partial<RunEnd> = {}): RunEnd => ({ status: "succeeded", next: "review", ...over });
 
@@ -57,5 +57,11 @@ describe("label changes", () => {
 
   it("refuses past the loop cap: the task label off, waiting on Oscar", () => {
     expect(refused("implement")).toEqual({ add: [HUMAN_NEEDED_LABEL], remove: ["oscar-factory:implement"] });
+  });
+});
+
+describe("requeued", () => {
+  it("takes in-progress off and leaves the task queued, so the run starts again when the factory does", () => {
+    expect(requeued("implement")).toEqual({ add: ["oscar-factory:implement"], remove: [IN_PROGRESS_LABEL] });
   });
 });
