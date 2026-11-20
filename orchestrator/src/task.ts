@@ -14,20 +14,21 @@ import { finished, nextTask, type RunEnd } from "./transitions.ts";
  * A task: what a run of it gets on the runner, and its part of the run.
  * - `skills`: what the run uploads from runner-files/skills/: the skills the prompt calls, and the
  *   ones those call in turn.
+ * - `docs`: files in the task's folder that its prompt points at, uploaded beside the prompt to
+ *   `{{runDir}}/<file>`. The agent reads one when its step comes up, so it stays out of the prompt.
  * - `browser`: the Playwright MCP server, for checking and capturing the UI.
  * - `branch`: the ticket's branch. `optional` builds on it where it's on GitHub and branches from
  *   main where it isn't; `required` fails the run when no repo has it on GitHub; `none` never
  *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
- * - `delivers`: what the pickup comment says the run will come back with.
  * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs.
  */
 export type Task = {
   skills: readonly string[];
+  docs: readonly string[];
   browser: boolean;
   branch: "optional" | "required" | "none";
   timeLimitMinutes: number | null;
-  delivers: string;
   prepare: (ctx: RunContext) => Promise<Prepared>;
 };
 

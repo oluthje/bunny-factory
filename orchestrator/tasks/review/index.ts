@@ -1,6 +1,6 @@
 // `review` checks out the ticket's branch, fixes what it's sure of and commits that, and ends with a
 // review file; the factory pushes the fixes, posts the rest as a GitHub review and marks the PRs
-// ready. It runs specs, so it gets `oscar-factory-stack`, but no browser or evidence. Then the
+// ready. It runs specs, so it gets `factory-stack`, but no browser or evidence. Then the
 // ticket waits on Oscar. The tree of its prompt is in tasks/README.md.
 import { branchDiff } from "../../src/git.ts";
 import { getPrBody, markReady, postReview } from "../../src/github.ts";
@@ -19,11 +19,11 @@ import {
 } from "./review.ts";
 
 export const review: Task = {
-  skills: ["oscar-factory-rules", "oscar-factory-stack", "code-review"],
+  skills: ["factory-rules", "factory-stack", "code-review"],
+  docs: [],
   browser: false,
   branch: "required",
   timeLimitMinutes: null,
-  delivers: "the review",
   prepare,
 };
 

@@ -135,7 +135,7 @@ export const runTicket = inngest.createFunction(
       });
       const id = sandboxId;
 
-      // 3. Bundles, Claude's settings, the task's skills, prompt and MCP config in. Each repo checks the branch out
+      // 3. Bundles, Claude's settings, the task's skills, prompt, docs and MCP config in. Each repo checks the branch out
       // from its own bundle where it's on GitHub, and from the new main elsewhere. A task that never
       // touches the branch gets a detached `origin/main`, so a commit has nowhere to go.
       await step.run("upload-and-checkout", async () => {
@@ -150,6 +150,7 @@ export const runTicket = inngest.createFunction(
         const prompt = buildPrompt({ task, ticket, timeLimitMinutes, vars: prepared.vars });
         fs.writeFileSync(path.join(localDir, "prompt.md"), prompt);
         await upload(sb, Buffer.from(prompt), `${RUN_DIR}/prompt.md`);
+        for (const doc of settings.docs) await upload(sb, path.join(TASKS_DIR, task, doc), `${RUN_DIR}/${doc}`);
         if (settings.browser) await upload(sb, Buffer.from(JSON.stringify(MCP_CONFIG)), `${RUN_DIR}/mcp.json`);
         if (pass) {
           await upload(sb, Buffer.from(pass.schema), PASS_SCHEMA);

@@ -11,11 +11,11 @@ import { exploreVerdictJsonSchema, FINDINGS_TAG, handOff, parseExploreVerdict, v
 import { FINDINGS, promptVars, renderThread } from "./prompt.ts";
 
 export const explore: Task = {
-  skills: ["oscar-factory-rules", "oscar-factory-stack"],
+  skills: ["factory-rules", "factory-stack"],
+  docs: [],
   browser: true,
   branch: "none",
   timeLimitMinutes: 20,
-  delivers: "its findings",
   prepare,
 };
 

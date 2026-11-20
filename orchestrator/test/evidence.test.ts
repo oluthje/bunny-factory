@@ -36,6 +36,12 @@ describe("linkEvidence", () => {
     expect(out).not.toContain("evidence/");
   });
 
+  it("links a recording by its .webm name as a video", () => {
+    expect(linkEvidence("![After: flow](evidence/after-flow.webm)", { "after-flow.webm": "https://uploads.linear.app/d" })).toBe(
+      "[▶ After: flow](https://uploads.linear.app/d)",
+    );
+  });
+
   it("marks a file that was never uploaded instead of leaving a broken image", () => {
     expect(linkEvidence("![After: x](evidence/after-x.png)", {})).toBe("After: x _(not captured)_");
   });

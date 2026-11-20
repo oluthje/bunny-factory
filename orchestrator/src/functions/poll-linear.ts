@@ -3,8 +3,7 @@ import { countRuns, getCursor, recordRun, runsInFlight, setCursor, ticketRunInFl
 import { applyLabels, comment, fetchOptedInTickets } from "../linear.ts";
 import { cursorAfterPoll, decideRuns, linearComment, selectNewTickets } from "../logic.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
-import { taskLabel } from "../labels.ts";
-import { TASKS, taskFromLabels } from "../tasks.ts";
+import { taskFromLabels } from "../tasks.ts";
 import { LOOP_CAP, pickedUp, refused } from "../transitions.ts";
 
 const CURSOR = "linear.updatedAt";
@@ -66,15 +65,6 @@ export const pollLinear = inngest.createFunction(
         name: RUN_REQUESTED,
         data: { runId, ticket, task },
       });
-      await step.run(`ack-${ticket.identifier}`, () =>
-        comment(
-          ticket.id,
-          linearComment(
-            `Picked up \`${taskLabel(task)}\`. I'll comment again with ${TASKS[task].delivers} or the failure.`,
-            runId,
-          ),
-        ),
-      );
     }
 
     await step.run("advance-cursor", () => {
