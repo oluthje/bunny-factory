@@ -185,29 +185,32 @@ export const runTicket = inngest.createFunction(
         );
       });
 
-      // 4. Catch-up: gems, npm, migrations, then the stack. Runs in the background and is polled.
-      // Inngest replays this function for every step, so wall-clock times are taken inside steps.
-      const catchUp = await step.run("start-catch-up", async () => ({
-        startedAt: Date.now(),
-        cmdId: await startBackground(
-          await getSandbox(id),
-          "catch-up",
-          `set -o pipefail; { bunny-stack up && bunny-stack run api env RAILS_ENV=test bin/rails db:prepare && bunny-stack smoke; } > ${ARTIFACTS}/catch-up.log 2>&1`,
-        ),
-      }));
-      let catchUpExit: number | null = null;
-      for (let i = 0; catchUpExit === null && i < 80; i++) {
-        await step.sleep(`catch-up-wait-${i}`, "15s");
-        catchUpExit = await step.run(`catch-up-poll-${i}`, async () =>
-          exitCodeOf(await getSandbox(id), "catch-up", catchUp.cmdId),
+      // 4. Catch-up: gems, npm, migrations, then the stack, for a task that uses it. Runs in the
+      // background and is polled. Inngest replays this function for every step, so wall-clock
+      // times are taken inside steps.
+      if (settings.stack) {
+        const catchUp = await step.run("start-catch-up", async () => ({
+          startedAt: Date.now(),
+          cmdId: await startBackground(
+            await getSandbox(id),
+            "catch-up",
+            `set -o pipefail; { bunny-stack up && bunny-stack run api env RAILS_ENV=test bin/rails db:prepare && bunny-stack smoke; } > ${ARTIFACTS}/catch-up.log 2>&1`,
+          ),
+        }));
+        let catchUpExit: number | null = null;
+        for (let i = 0; catchUpExit === null && i < 80; i++) {
+          await step.sleep(`catch-up-wait-${i}`, "15s");
+          catchUpExit = await step.run(`catch-up-poll-${i}`, async () =>
+            exitCodeOf(await getSandbox(id), "catch-up", catchUp.cmdId),
+          );
+        }
+        if (catchUpExit !== 0) {
+          throw new Error(`catch-up ${catchUpExit === null ? "timed out" : `exited ${catchUpExit}`}; see catch-up.log`);
+        }
+        await step.run("record-catch-up", () =>
+          updateRun(runId, { catchUpSeconds: Math.round((Date.now() - catchUp.startedAt) / 1000) }),
         );
       }
-      if (catchUpExit !== 0) {
-        throw new Error(`catch-up ${catchUpExit === null ? "timed out" : `exited ${catchUpExit}`}; see catch-up.log`);
-      }
-      await step.run("record-catch-up", () =>
-        updateRun(runId, { catchUpSeconds: Math.round((Date.now() - catchUp.startedAt) / 1000) }),
-      );
 
       // 5. Claude, headless, in the background, with the Playwright browser if the task gets one.
       const mcp = settings.browser ? `--mcp-config ${RUN_DIR}/mcp.json ` : "";

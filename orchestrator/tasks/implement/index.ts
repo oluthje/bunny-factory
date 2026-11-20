@@ -27,6 +27,7 @@ export const implement: Task = {
   ],
   docs: ["pr-guide.md"], // read at step 7, with the pr skill
   browser: true,
+  stack: true,
   branch: "optional",
   timeLimitMinutes: null,
   prepare,

@@ -23,6 +23,7 @@ export const review: Task = {
   skills: ["factory-rules", "factory-stack", "code-review"],
   docs: [],
   browser: false,
+  stack: true,
   branch: "required",
   timeLimitMinutes: null,
   prepare,

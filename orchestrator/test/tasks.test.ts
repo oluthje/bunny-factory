@@ -55,16 +55,16 @@ describe("skillsFor", () => {
 });
 
 describe("TASKS", () => {
-  it("gives implement the browser and lets it create or update the branch", () => {
-    expect(TASKS.implement).toMatchObject({ browser: true, branch: "optional" });
+  it("gives implement the browser and the stack, and lets it create or update the branch", () => {
+    expect(TASKS.implement).toMatchObject({ browser: true, stack: true, branch: "optional" });
   });
 
-  it("gives review no browser, and needs the branch on GitHub", () => {
-    expect(TASKS.review).toMatchObject({ browser: false, branch: "required" });
+  it("gives review no browser, the stack for specs, and needs the branch on GitHub", () => {
+    expect(TASKS.review).toMatchObject({ browser: false, stack: true, branch: "required" });
   });
 
-  it("gives explore the browser, origin/main only, and 20 minutes", () => {
-    expect(TASKS.explore).toMatchObject({ browser: true, branch: "none", timeLimitMinutes: 20 });
+  it("gives explore the browser, the stack, origin/main only, and 20 minutes", () => {
+    expect(TASKS.explore).toMatchObject({ browser: true, stack: true, branch: "none", timeLimitMinutes: 20 });
     expect(skillsFor("explore")).toEqual(["factory-rules", "factory-stack"]);
   });
 });

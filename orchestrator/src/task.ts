@@ -17,6 +17,8 @@ import { finished, nextTask, type RunEnd } from "./transitions.ts";
  * - `docs`: files in the task's folder that its prompt points at, uploaded beside the prompt to
  *   `{{runDir}}/<file>`. The agent reads one when its step comes up, so it stays out of the prompt.
  * - `browser`: the Playwright MCP server, for checking and capturing the UI.
+ * - `stack`: the catch-up before Claude starts (gems, npm, migrations, the running Bunny stack).
+ *   A task that only reads code goes without, and starts minutes sooner.
  * - `branch`: the ticket's branch. `optional` builds on it where it's on GitHub and branches from
  *   main where it isn't; `required` fails the run when no repo has it on GitHub; `none` never
  *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
@@ -28,6 +30,7 @@ export type Task = {
   skills: readonly string[];
   docs: readonly string[];
   browser: boolean;
+  stack: boolean;
   branch: "optional" | "required" | "none";
   timeLimitMinutes: number | null;
   prepare: (ctx: RunContext) => Promise<Prepared | Stop>;
