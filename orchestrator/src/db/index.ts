@@ -78,6 +78,26 @@ export function closeIfOpen(id: string, status: "failed" | "cancelled"): void {
     .run();
 }
 
+/** Records that Inngest just called the run's function; only a run in flight. See `runs.lastSeenAt`. */
+export function heartbeat(id: string): void {
+  db.update(runs)
+    .set({ lastSeenAt: new Date().toISOString() })
+    .where(and(eq(runs.id, id), inArray(runs.status, ["requested", "running"])))
+    .run();
+}
+
+/** Every run queued or working, for sweep-runs to judge. */
+export function runsOpen(): RunRow[] {
+  return db.select().from(runs).where(inArray(runs.status, ["requested", "running"])).all();
+}
+
+/** The runs with these ids that this orchestrator knows, with their status. */
+export function runStatuses(ids: string[]): Record<string, RunRow["status"]> {
+  if (ids.length === 0) return {};
+  const rows = db.select({ id: runs.id, status: runs.status }).from(runs).where(inArray(runs.id, ids)).all();
+  return Object.fromEntries(rows.map((r) => [r.id, r.status]));
+}
+
 export function updateRun(id: string, set: Partial<RunRow>): void {
   db.update(runs).set(set).where(eq(runs.id, id)).run();
 }

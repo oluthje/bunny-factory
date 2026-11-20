@@ -80,6 +80,30 @@ export function decideRuns<T>(
 export const prRef = (u: string) => `[${u.replace("https://github.com/", "").replace("/pull/", "#")}](${u})`;
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/**
+ * A run in flight is lost when Inngest hasn't called its function for `staleMinutes`: its heartbeat,
+ * or its creation for a run that never started. Inngest calls a live run at every step and every
+ * wake from a sleep, and no sleep or step in a run comes near the limit.
+ */
+export function isLostRun(run: { createdAt: string; lastSeenAt: string | null }, now: Date, staleMinutes: number): boolean {
+  const seen = Date.parse(run.lastSeenAt ?? run.createdAt);
+  return now.getTime() - seen > staleMinutes * 60_000;
+}
+
+/**
+ * The factory sandboxes to delete: those whose run this orchestrator knows and has finished. A
+ * sandbox of a run it doesn't know is left alone, since another orchestrator (local dev, or Fly)
+ * shares the Daytona account and may own it.
+ */
+export function leftoverSandboxes(
+  sandboxes: { id: string; runId: string | undefined }[],
+  statuses: Record<string, string>,
+): string[] {
+  return sandboxes
+    .filter(({ runId }) => runId !== undefined && statuses[runId] !== undefined && !["requested", "running"].includes(statuses[runId]!))
+    .map(({ id }) => id);
+}
+
 export function sandboxName(identifier: string, runId: string): string {
   return `oscar-factory-${identifier}-${runId.slice(0, 8)}`.toLowerCase();
 }

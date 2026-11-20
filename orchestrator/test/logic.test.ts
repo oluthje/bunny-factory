@@ -8,6 +8,8 @@ import {
   hasCommentTag,
   inlineEvidence,
   isFactoryComment,
+  isLostRun,
+  leftoverSandboxes,
   linearComment,
   parseChangedRepos,
   sandboxName,
@@ -164,5 +166,33 @@ describe("staleCheckoutRefusal", () => {
   });
   it("starts anyway when told to", () => {
     expect(staleCheckoutRefusal(2, "main", true)).toBeNull();
+  });
+});
+
+describe("isLostRun", () => {
+  const now = new Date("2026-11-20T12:00:00Z");
+
+  it("judges a run by its heartbeat", () => {
+    expect(isLostRun({ createdAt: "2026-11-20T10:00:00Z", lastSeenAt: "2026-11-20T11:45:00Z" }, now, 30)).toBe(false);
+    expect(isLostRun({ createdAt: "2026-11-20T10:00:00Z", lastSeenAt: "2026-11-20T11:29:00Z" }, now, 30)).toBe(true);
+  });
+
+  it("judges a run that never started by its creation", () => {
+    expect(isLostRun({ createdAt: "2026-11-20T11:50:00Z", lastSeenAt: null }, now, 30)).toBe(false);
+    expect(isLostRun({ createdAt: "2026-11-20T11:00:00Z", lastSeenAt: null }, now, 30)).toBe(true);
+  });
+});
+
+describe("leftoverSandboxes", () => {
+  it("deletes only sandboxes of runs this orchestrator knows and has finished", () => {
+    const sandboxes = [
+      { id: "done", runId: "r1" },
+      { id: "live", runId: "r2" },
+      { id: "queued", runId: "r3" },
+      { id: "foreign", runId: "r4" },
+      { id: "unlabelled", runId: undefined },
+    ];
+    const statuses = { r1: "failed", r2: "running", r3: "requested" };
+    expect(leftoverSandboxes(sandboxes, statuses)).toEqual(["done"]);
   });
 });

@@ -21,6 +21,11 @@ export const runs = sqliteTable("runs", {
   reviewVerdict: text("review_verdict", { mode: "json" }).$type<Record<string, string>>(),
   error: text("error"),
   createdAt: text("created_at").notNull(),
+  /**
+   * The last time Inngest called the run's function: every step and every wake from a sleep. A run
+   * in flight whose heartbeat goes quiet has been lost by Inngest, and sweep-runs closes it.
+   */
+  lastSeenAt: text("last_seen_at"),
   finishedAt: text("finished_at"),
 });
 
