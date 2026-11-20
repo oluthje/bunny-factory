@@ -27,7 +27,7 @@ Permissions stay on the command line (`--dangerously-skip-permissions` in `src/f
 |---|---|---|
 | `factory-rules` | The rules every run follows: headless decisions, time budget, fixed point, gaps | all |
 | `factory-stack` | Reference for the Bunny stack in the runner: repos, services, specs, login, known gaps | `implement`, `review`, `explore` |
-| `factory-evidence` | Before-and-after screenshots or GIFs for a visual change | `implement` |
+| `factory-evidence` | Before-and-after screenshots or videos for a visual change | `implement` |
 | `implement`, `tdd`, `codebase-design` | Matt Pocock's skills, copied from `~/development/.claude/skills` on 2026-11-18 | `implement` |
 | `code-review` | Matt Pocock's, same copy | `implement`, `review` |
 | `pr` | Dex Horthy's `show-me`, via `~/development/.claude/skills/pr` (see its `CREDITS.md`) | `implement` |

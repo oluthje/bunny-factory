@@ -27,7 +27,10 @@ export async function extractEvidence(runDir: string): Promise<string> {
   return dir;
 }
 
-/** The file to upload for a reference: a `.gif` the agent couldn't convert falls back to its `.webm`. */
+/**
+ * The file to upload for a reference. Runs now reference their `.webm` recordings directly; a `.gif`
+ * reference, from runs and backfills made before that, falls back to the `.webm` beside it.
+ */
 function resolve(dir: string, file: string): string | null {
   const exact = path.join(dir, file);
   if (fs.existsSync(exact)) return exact;
