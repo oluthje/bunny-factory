@@ -162,3 +162,17 @@ export function linkEvidence(body: string, urls: Record<string, string>): string
     return `[${icon} ${alt}](${url})`;
   });
 }
+
+/**
+ * Whether the orchestrator may start from a local checkout `behind` commits behind its upstream.
+ * Returns the reason to refuse, or null to start. Code merged on the git host but not pulled
+ * would otherwise run silently: REC-8812's explore posted the old findings layout because the
+ * orchestrator started two commits behind the question-card merge.
+ */
+export function staleCheckoutRefusal(behind: number, branch: string, allowStale: boolean): string | null {
+  if (behind === 0 || allowStale) return null;
+  return (
+    `This checkout is ${behind} commit${behind === 1 ? "" : "s"} behind origin/${branch}, so merged changes would not run. ` +
+    `Pull first, or set FACTORY_ALLOW_STALE=1 to start anyway.`
+  );
+}

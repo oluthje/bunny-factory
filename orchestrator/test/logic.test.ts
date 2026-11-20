@@ -13,6 +13,7 @@ import {
   sandboxName,
   selectNewTickets,
   shQuote,
+  staleCheckoutRefusal,
 } from "../src/logic.ts";
 import { ticket } from "./fixtures.ts";
 
@@ -149,5 +150,19 @@ describe("decideRuns", () => {
 
   it("gives a capped ticket no slot", () => {
     expect(outcomes(decideRuns([at("a", 10), at("b", 11)], 1, (t) => t.id === "a"))).toEqual(["a:capped", "b:started"]);
+  });
+});
+
+describe("staleCheckoutRefusal", () => {
+  it("starts from a checkout that is up to date", () => {
+    expect(staleCheckoutRefusal(0, "main", false)).toBeNull();
+  });
+  it("refuses a checkout behind its upstream, naming the count and the way out", () => {
+    const refusal = staleCheckoutRefusal(2, "main", false);
+    expect(refusal).toContain("2 commits behind origin/main");
+    expect(refusal).toContain("FACTORY_ALLOW_STALE=1");
+  });
+  it("starts anyway when told to", () => {
+    expect(staleCheckoutRefusal(2, "main", true)).toBeNull();
   });
 });
