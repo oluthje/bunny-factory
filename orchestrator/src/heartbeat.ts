@@ -1,7 +1,7 @@
 // Inngest middleware on run-ticket: every call Inngest makes to the run's function (each step, each
 // wake from a sleep) records a heartbeat on the run's row. sweep-runs (functions/sweep-runs.ts)
 // closes a run in flight whose heartbeat has gone quiet: Inngest has lost it. Each step the run
-// starts is recorded too, for `factory status`.
+// starts is recorded too, for `fac status`.
 import { Middleware } from "inngest";
 import { heartbeat, recordStep } from "./db/index.ts";
 

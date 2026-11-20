@@ -205,7 +205,7 @@ export function staleCheckoutRefusal(behind: number, branch: string, allowStale:
   );
 }
 
-/** Whether the factory takes new runs: `factory start` and `factory stop` (scripts/factory.ts) set it. */
+/** Whether the factory takes new runs: `fac start` and `fac stop` (scripts/factory.ts) set it. */
 export type FactoryState = "running" | "stopped";
 
 /**
@@ -216,7 +216,7 @@ export function mayStartRuns(poll: string | undefined, state: FactoryState): boo
   return poll === "on" && state === "running";
 }
 
-/** What `factory status` calls the factory: stopped with runs still in flight is draining. */
+/** What `fac status` calls the factory: stopped with runs still in flight is draining. */
 export function factoryMode(state: FactoryState, inFlight: number): "running" | "draining" | "stopped" {
   if (state === "running") return "running";
   return inFlight > 0 ? "draining" : "stopped";

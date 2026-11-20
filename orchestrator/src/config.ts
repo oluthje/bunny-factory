@@ -37,7 +37,7 @@ export const config = {
 
   /**
    * `on` lets this machine start runs; anything else, or unset, starts none. Set only as a Fly
-   * secret, so a laptop never starts runs. `factory stop` (scripts/factory.ts) stops a machine that has it.
+   * secret, so a laptop never starts runs. `fac stop` (scripts/factory.ts) stops a machine that has it.
    */
   poll: process.env.FACTORY_POLL,
   /** The commit the image was built from, and when it was deployed: set by the Dockerfile. */

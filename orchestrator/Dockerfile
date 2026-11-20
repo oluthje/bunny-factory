@@ -16,7 +16,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Also a Fly secret; set here too so a `fly ssh console` session never falls back to ./data.
 ENV NODE_ENV=production DATA_DIR=/data
-# Last, so a new commit rebuilds only this layer. `factory status` shows them.
+# Last, so a new commit rebuilds only this layer. `fac status` shows them.
 ARG FACTORY_COMMIT
 ARG FACTORY_DEPLOYED_AT
 ENV FACTORY_COMMIT=$FACTORY_COMMIT FACTORY_DEPLOYED_AT=$FACTORY_DEPLOYED_AT

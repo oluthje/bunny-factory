@@ -1,4 +1,4 @@
-// The `factory status` screen (src/status.ts): what each section shows and when it warns.
+// The `fac status` screen (src/status.ts): what each section shows and when it warns.
 import { describe, expect, it } from "vitest";
 import { renderStatus, type StatusInput } from "../src/status.ts";
 

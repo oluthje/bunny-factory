@@ -20,7 +20,7 @@ const CURSOR = "linear.updatedAt";
  *   cursor stops short of the first of them, so a later poll fetches them again. Inngest can't hold
  *   runs apart (see runTicket).
  * - Past the loop cap the task isn't started, and the ticket waits on Oscar.
- * - Only a machine with FACTORY_POLL=on, while the factory is running (`factory start` / `stop`),
+ * - Only a machine with FACTORY_POLL=on, while the factory is running (`fac start` / `stop`),
  *   polls at all. Otherwise it fetches nothing and leaves the cursor, so the next poll that may
  *   start runs fetches every ticket that changed meanwhile.
  * A ticket with an unknown or ambiguous factory label is skipped and reported in this function's

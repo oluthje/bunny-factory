@@ -1,4 +1,4 @@
-// What `factory status` prints (scripts/factory.ts): the factory's state, its runs in flight, the
+// What `fac status` prints (scripts/factory.ts): the factory's state, its runs in flight, the
 // last finished runs and the health checks, on one screen. Pure: the script gathers the input from
 // SQLite, the volume and Daytona; this only renders it. Unit-tested in test/status.test.ts.
 import type { RunRow } from "./db/index.ts";

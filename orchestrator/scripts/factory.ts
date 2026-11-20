@@ -1,4 +1,4 @@
-// The `factory` CLI's commands, run inside the Fly machine by `bin/factory` (over `fly ssh
+// The `fac` CLI's commands, run inside the Fly machine by `bin/fac` (over `fly ssh
 // console`), so they work on the machine's SQLite directly. The root README.md documents them.
 //
 //   node scripts/factory.ts status | start | stop | stop --now
@@ -18,7 +18,7 @@ import { deleteSandbox, snapshotCreatedAt } from "../src/sandbox.ts";
 import { renderStatus, type StatusInput } from "../src/status.ts";
 import { requeue } from "../src/task.ts";
 
-const USAGE = "Usage: factory status | start | stop | stop --now";
+const USAGE = "Usage: fac status | start | stop | stop --now";
 
 async function snapshot(): Promise<StatusInput["snapshot"]> {
   try {
@@ -68,7 +68,7 @@ async function stopNow(): Promise<void> {
       closeIfOpen(run.id, "cancelled");
       await inngest.send({ name: RUN_STOP, data: { runId: run.id } });
       await deleteSandbox(sandboxName(run.ticketIdentifier, run.id));
-      await requeue({ runId: run.id, ticketId: run.ticketId, text: "The run was cancelled by `factory stop --now`. Its runner was deleted." });
+      await requeue({ runId: run.id, ticketId: run.ticketId, text: "The run was cancelled by `fac stop --now`. Its runner was deleted." });
       console.log(`Cancelled ${run.ticketIdentifier} (${run.task}): runner deleted, task label put back.`);
     } catch (err) {
       process.exitCode = 1;
@@ -95,7 +95,7 @@ if (command === "status" && flags.length === 0) {
     const left = runsOpen().length;
     console.log(
       `Stopping: no new runs start. ${plural(left, "run")} in flight: those with a runner finish, ` +
-        "queued ones end cancelled and keep their task label. `factory status` shows what's left.",
+        "queued ones end cancelled and keep their task label. `fac status` shows what's left.",
     );
   }
 } else {

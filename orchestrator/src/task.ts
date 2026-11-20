@@ -125,7 +125,7 @@ function handoffLine(end: RunEnd): string {
  * Records the run's end, reports on the ticket, then moves its labels on. The record goes first:
  * the poller only picks up a ticket with no run in flight.
  *
- * A run already cancelled is left as it is: `factory stop --now` (`requeue`) or run-cancelled has
+ * A run already cancelled is left as it is: `fac stop --now` (`requeue`) or run-cancelled has
  * closed it and moved its labels, and a step still in flight when it was cancelled mustn't undo
  * that. `finish` itself never records `cancelled`, so its own retry after a partial failure still
  * comments and moves the labels.
@@ -147,7 +147,7 @@ export async function finish(args: {
 }
 
 /**
- * The factory stopped the run itself (`factory stop` before it had a runner, or `stop --now`):
+ * The factory stopped the run itself (`fac stop` before it had a runner, or `stop --now`):
  * records it cancelled, says so on the ticket, and queues its task again (`requeued`), so it starts
  * over when the factory starts. A cancelled run doesn't count toward the loop cap (`countRuns`).
  * Safe to repeat: the record closes once, and the labels change only what's still to change.
