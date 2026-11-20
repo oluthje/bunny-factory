@@ -4,7 +4,7 @@ Oscar reads the PR body before the diff, without the ticket open. Write it with 
 
 ## Evidence
 
-Use the Evidence section `factory-evidence` wrote, as is: its table replaces the template's Before/After list, and anything it couldn't capture stays under that table, not in Gaps.
+Use the Evidence section `factory-evidence` wrote, as is: its table replaces the template's Before/After list.
 
 ## Summary
 
