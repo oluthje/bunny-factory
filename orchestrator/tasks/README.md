@@ -44,7 +44,7 @@ implement/prompt.md          one prompt for both modes: {{mode}}, {{start}} and 
 ├── 5. code-review                  per changed repo, against origin/main; fixes what it agrees with, commits
 ├── 6. factory-evidence             steps 3–4: capture the "after" on reviewed code, the Evidence section
 ├── 7. pr                           the PR body for the whole PR, held to implement/pr-guide.md:
-│                                   plain opening, every file a line, ≤5 Decisions, Gaps, the rest
+│                                   plain opening, labels written out, ≤5 Decisions, Gaps, the rest
 │                                   in collapsed Run notes, the Evidence section as step 6 wrote it
 └── Finish line                     commits with the ticket prefix, history only gains commits, clean git
                                     status, the PR body written
