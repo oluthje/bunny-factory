@@ -1,7 +1,8 @@
 // `review` checks out the ticket's branch, fixes what it's sure of and commits that, and ends with a
 // review file; the factory pushes the fixes, posts the rest as a GitHub review and marks the PRs
-// ready. It runs specs, so it gets `factory-stack`, but no browser or evidence. Then the
-// ticket waits on Oscar. The tree of its prompt is in tasks/README.md.
+// ready. It runs specs, so it gets `factory-stack`, but no browser or evidence. A review that
+// reached a PR hands off to merge, whatever its verdict: merge weighs the findings itself. The tree
+// of its prompt is in tasks/README.md.
 import { questionReport } from "../../src/questions.ts";
 import { branchDiff } from "../../src/git.ts";
 import { getPrBody, markReady, postReview } from "../../src/github.ts";
@@ -108,11 +109,12 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
           : timedOut
             ? `Timed out after ${timeLimitMinutes} minutes without writing a review.${fixes}`
             : `Finished without writing a review.${fixes}`;
-        // The chain ends here: a reviewed PR waits on Oscar.
+        // A reviewed PR goes to merge, which decides whether it's an easy call; with no PR, there's
+        // nothing to merge, and the ticket waits on Oscar.
         await finish({
           runId,
           ticketId: ticket.id,
-          end: { status, next: "human" },
+          end: { status, next: posted.urls.length ? "merge" : "human" },
           text: report,
           record: { prUrls: posted.urls, reviewVerdict: verdict, ...(errors.length ? { error: errors.join(" ") } : {}) },
         });
