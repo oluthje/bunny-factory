@@ -107,7 +107,7 @@ export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" :
 /** The end of the run's Linear report: what the ticket's labels now ask for. */
 function handoffLine(end: RunEnd): string {
   const next = nextTask(end);
-  return next ? `Handing off: \`${taskLabel(next)}\` queued.` : "Waiting on Oscar.";
+  return next === "human" ? "Waiting on Oscar." : next === "done" ? "Done: nothing waits on Oscar." : `Handing off: \`${taskLabel(next)}\` queued.`;
 }
 
 /**

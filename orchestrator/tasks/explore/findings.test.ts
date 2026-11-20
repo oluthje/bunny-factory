@@ -48,8 +48,8 @@ describe("handOff", () => {
   });
 
   it("waits on Oscar when the run needs him or gave no verdict", () => {
-    expect(handOff("human-needed")).toBeNull();
-    expect(handOff(null)).toBeNull();
+    expect(handOff("human-needed")).toBe("human");
+    expect(handOff(null)).toBe("human");
   });
 });
 

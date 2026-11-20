@@ -111,7 +111,7 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
         await finish({
           runId,
           ticketId: ticket.id,
-          end: { status, next: null },
+          end: { status, next: "human" },
           text: report,
           record: { prUrls: posted.urls, reviewVerdict: verdict, ...(errors.length ? { error: errors.join(" ") } : {}) },
         });

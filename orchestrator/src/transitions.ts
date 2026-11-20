@@ -7,6 +7,7 @@
 //   oscar-factory:<task> + oscar-factory:in-progress   a run of <task> is queued or working
 //        │ finished: both labels off, then
 //        ├─ succeeded, and the task names a next one ──▶ oscar-factory:<next>   (queued again)
+//        ├─ succeeded, and the task says done ─────────▶ no factory label       (nothing waits)
 //        └─ otherwise ─────────────────────────────────▶ oscar-factory:human-needed
 //
 // The task label stays on through the run so Linear shows which stage the ticket is in; the poller
@@ -21,16 +22,22 @@ import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, taskLabel } from "./labels.ts";
 
 export type LabelChange = { add: string[]; remove: string[] };
 
+/**
+ * What comes after a run: a task to hand off to, `human` to wait on Oscar, or `done` when the
+ * ticket's work is finished and nothing waits on anyone.
+ */
+export type Next = TaskName | "human" | "done";
+
 /** How a run ended, as the labels see it. */
 export type RunEnd = {
   status: "succeeded" | "no_changes" | "failed" | "timed_out" | "cancelled";
-  /** The task the run asks to hand off to, or null for "wait for Oscar". */
-  next: TaskName | null;
+  /** What the run asks to come next. */
+  next: Next;
 };
 
 /** A run that ended any way but `succeeded` stops for a human, whatever it asked for. */
-export function nextTask(end: RunEnd): TaskName | null {
-  return end.status === "succeeded" ? end.next : null;
+export function nextTask(end: RunEnd): Next {
+  return end.status === "succeeded" ? end.next : "human";
 }
 
 /** The most runs of one task a ticket gets; past it, Oscar has to step in. */
@@ -47,11 +54,12 @@ export function refused(task: TaskName): LabelChange {
 }
 
 /**
- * A run of `task` ended: its labels off, then queue the next task or wait for Oscar. A hand-off to
- * the same task keeps its label, so the ticket is queued again.
+ * A run of `task` ended: its labels off, then queue the next task, wait for Oscar, or, when done,
+ * add nothing. A hand-off to the same task keeps its label, so the ticket is queued again.
  */
 export function finished(task: TaskName, end: RunEnd): LabelChange {
   const next = nextTask(end);
   const remove = next === task ? [IN_PROGRESS_LABEL] : [IN_PROGRESS_LABEL, taskLabel(task)];
-  return { add: [next ? taskLabel(next) : HUMAN_NEEDED_LABEL], remove };
+  const add = next === "done" ? [] : next === "human" ? [HUMAN_NEEDED_LABEL] : [taskLabel(next)];
+  return { add, remove };
 }

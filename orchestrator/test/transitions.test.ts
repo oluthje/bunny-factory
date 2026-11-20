@@ -9,13 +9,18 @@ describe("nextTask", () => {
     expect(nextTask(end())).toBe("review");
   });
 
-  it("waits on Oscar when the run asked for nothing", () => {
-    expect(nextTask(end({ next: null }))).toBeNull();
+  it("waits on Oscar when the run asked for him", () => {
+    expect(nextTask(end({ next: "human" }))).toBe("human");
   });
 
-  it("never chains a run that didn't succeed, whatever it asked for", () => {
+  it("ends the chain with nobody waiting when a run that succeeded asked for done", () => {
+    expect(nextTask(end({ next: "done" }))).toBe("done");
+  });
+
+  it("never chains or closes a run that didn't succeed, whatever it asked for", () => {
     for (const status of ["failed", "timed_out", "cancelled", "no_changes"] as const) {
-      expect(nextTask(end({ status })), status).toBeNull();
+      expect(nextTask(end({ status })), status).toBe("human");
+      expect(nextTask(end({ status, next: "done" })), status).toBe("human");
     }
   });
 });
@@ -41,9 +46,13 @@ describe("label changes", () => {
 
   it("waits on Oscar when the chain ends, the task label off", () => {
     const waiting = { add: [HUMAN_NEEDED_LABEL], remove: [IN_PROGRESS_LABEL, "oscar-factory:review"] };
-    expect(finished("review", end({ next: null }))).toEqual(waiting);
+    expect(finished("review", end({ next: "human" }))).toEqual(waiting);
     expect(finished("review", end({ status: "failed" }))).toEqual(waiting);
     expect(finished("review", end({ status: "failed", next: "review" }))).toEqual(waiting);
+  });
+
+  it("takes every factory label off and adds none when the chain is done", () => {
+    expect(finished("review", end({ next: "done" }))).toEqual({ add: [], remove: [IN_PROGRESS_LABEL, "oscar-factory:review"] });
   });
 
   it("refuses past the loop cap: the task label off, waiting on Oscar", () => {

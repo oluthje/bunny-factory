@@ -80,7 +80,7 @@ export const runTicket = inngest.createFunction(
       await step.run("delete-leftover-sandbox", () => deleteSandbox(sandboxName(ticket.identifier, runId)));
       await step.run("mark-stopped", async () => {
         closeIfOpen(runId, "failed");
-        await applyLabels(ticket.id, finished(task, { status: "failed", next: null }));
+        await applyLabels(ticket.id, finished(task, { status: "failed", next: "human" }));
       });
     },
   },
@@ -361,7 +361,7 @@ export const runTicket = inngest.createFunction(
         finish({
           runId,
           ticketId: ticket.id,
-          end: { status: "failed", next: null },
+          end: { status: "failed", next: "human" },
           text: `The run failed:\n\n\`\`\`\n${message.slice(0, 1500)}\n\`\`\``,
           record: { error: message },
         }),
