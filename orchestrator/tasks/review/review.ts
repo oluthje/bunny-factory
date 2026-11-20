@@ -1,6 +1,8 @@
-// The review's machine-readable parts: the verdict in review.md, and the findings it left as
-// inline comments, and the review as the factory posts it. Pure: no I/O, so it is unit-tested in review.test.ts.
+// The review's machine-readable parts: the verdict in review.md, the findings it left as inline
+// comments, the questions it leaves for Oscar, and the review as the factory posts it. Pure: no
+// I/O, so it is unit-tested in review.test.ts.
 import { z } from "zod/v4";
+import { questionsSchema, type Question } from "../../src/questions.ts";
 import { markForGithub, type Ticket } from "../../src/logic.ts";
 import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "../../src/structured.ts";
 
@@ -29,8 +31,11 @@ export function verdictLine(v: Verdict): string {
   return `Standards: **${v.standards}** · Spec: **${v.spec}**`;
 }
 
-/** The findings the review left, one per line it comments on. `repos` are the repos it reviewed. */
-export function reviewCommentsSchema(repos: readonly [string, ...string[]]) {
+/**
+ * The findings the review left, one per line it comments on, and its **Decision needed:** findings
+ * as questions. `repos` are the repos it reviewed.
+ */
+export function reviewExtractionSchema(repos: readonly [string, ...string[]]) {
   return z
     .strictObject({
       comments: z
@@ -52,31 +57,32 @@ export function reviewCommentsSchema(repos: readonly [string, ...string[]]) {
           }),
         )
         .describe("One entry per finding in the review that points at a file and line. Empty is fine."),
+      questions: questionsSchema,
     })
-    .describe("The review's inline comments.");
+    .describe("The review's inline comments and questions.");
 }
 
-export type ReviewComments = z.infer<ReturnType<typeof reviewCommentsSchema>>;
-export type InlineComment = ReviewComments["comments"][number];
+export type ReviewExtraction = z.infer<ReturnType<typeof reviewExtractionSchema>>;
+export type InlineComment = ReviewExtraction["comments"][number];
 
 /** The JSON Schema handed to `claude --json-schema`. */
-export function reviewCommentsJsonSchema(repos: readonly [string, ...string[]]): string {
-  return toCliJsonSchema(reviewCommentsSchema(repos));
+export function reviewExtractionJsonSchema(repos: readonly [string, ...string[]]): string {
+  return toCliJsonSchema(reviewExtractionSchema(repos));
 }
 
-/** The comments from the extraction pass's `claude --output-format json` result, validated again here. */
-export function parseReviewComments(
+/** The comments and questions from the extraction pass's `claude --output-format json` result, validated again here. */
+export function parseReviewExtraction(
   resultJson: string,
   repos: readonly [string, ...string[]],
   stderr = "",
-): { ok: true; comments: InlineComment[] } | { ok: false; error: string } {
-  const parsed = parseStructuredOutput(resultJson, reviewCommentsSchema(repos), { pass: "The extraction pass", noun: "comments" }, stderr);
-  return parsed.ok ? { ok: true, comments: parsed.value.comments } : parsed;
+): { ok: true; comments: InlineComment[]; questions: Question[] } | { ok: false; error: string } {
+  const parsed = parseStructuredOutput(resultJson, reviewExtractionSchema(repos), { pass: "The extraction pass", noun: "comments" }, stderr);
+  return parsed.ok ? { ok: true, ...parsed.value } : parsed;
 }
 
 /** The prompt for a retried extraction: the same session, told what was wrong with its last answer. */
 export function extractionRetryPrompt(error: string): string {
-  return structuredRetryPrompt(error, "Answer again with the findings that point at a line, in the same structure.");
+  return structuredRetryPrompt(error, "Answer again with the findings that point at a line and the questions, in the same structure.");
 }
 
 /**

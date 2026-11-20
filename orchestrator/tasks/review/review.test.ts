@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   diffLines,
   extractionRetryPrompt,
-  parseReviewComments,
+  parseReviewExtraction,
   parseVerdict,
   placeComments,
-  reviewCommentsJsonSchema,
+  reviewExtractionJsonSchema,
   reviewComment,
   verdictLine,
 } from "./review.ts";
@@ -106,12 +106,12 @@ describe("placeComments", () => {
   });
 });
 
-describe("review comments schema", () => {
+describe("review extraction schema", () => {
   const repos = ["api", "app"] as [string, ...string[]];
   const result = (structured_output: unknown) => JSON.stringify({ type: "result", structured_output });
 
   it("is a JSON Schema that names the reviewed repos and keeps the field descriptions", () => {
-    const schema = JSON.parse(reviewCommentsJsonSchema(repos));
+    const schema = JSON.parse(reviewExtractionJsonSchema(repos));
     const item = schema.properties.comments.items;
     expect(item.properties.repo.enum).toEqual(["api", "app"]);
     expect(item.properties.line.description).toMatch(/inside a hunk/);
@@ -119,33 +119,34 @@ describe("review comments schema", () => {
   });
 
   it("has no $schema key, which makes Claude Code reject the whole schema", () => {
-    expect(JSON.parse(reviewCommentsJsonSchema(repos))).not.toHaveProperty("$schema");
+    expect(JSON.parse(reviewExtractionJsonSchema(repos))).not.toHaveProperty("$schema");
   });
 
   it("accepts the CLI's structured output", () => {
     const comments = [{ repo: "api", path: "a.rb", line: 3, body: "Rename this." }];
-    expect(parseReviewComments(result({ comments }), repos)).toEqual({ ok: true, comments });
-    expect(parseReviewComments(result({ comments: [] }), repos)).toEqual({ ok: true, comments: [] });
+    expect(parseReviewExtraction(result({ comments, questions: [] }), repos)).toEqual({ ok: true, comments, questions: [] });
+    expect(parseReviewExtraction(result({ comments: [], questions: [] }), repos)).toEqual({ ok: true, comments: [], questions: [] });
   });
 
   it("rejects a missing, garbled or off-schema result", () => {
-    expect(parseReviewComments("", repos)).toMatchObject({ ok: false, error: /no result/ });
-    expect(parseReviewComments("", repos, "Error: bad flag\n")).toEqual({
+    expect(parseReviewExtraction("", repos)).toMatchObject({ ok: false, error: /no result/ });
+    expect(parseReviewExtraction("", repos, "Error: bad flag\n")).toEqual({
       ok: false,
       error: "The extraction pass wrote no result: Error: bad flag",
     });
-    expect(parseReviewComments("{not json", repos)).toMatchObject({ ok: false, error: /not JSON/ });
-    expect(parseReviewComments(JSON.stringify({ type: "result", subtype: "error_max_turns" }), repos)).toEqual({
+    expect(parseReviewExtraction("{not json", repos)).toMatchObject({ ok: false, error: /not JSON/ });
+    expect(parseReviewExtraction(JSON.stringify({ type: "result", subtype: "error_max_turns" }), repos)).toEqual({
       ok: false,
       error: "The extraction pass returned no structured output (error_max_turns).",
     });
-    expect(parseReviewComments(result({ comments: [{ repo: "kong", path: "a", line: 1, body: "x" }] }), repos)).toMatchObject({
+    expect(parseReviewExtraction(result({ comments: [{ repo: "kong", path: "a", line: 1, body: "x" }], questions: [] }), repos)).toMatchObject({
       ok: false,
       error: /repo/,
     });
-    expect(parseReviewComments(result({ comments: [{ repo: "api", path: "a", line: 0, body: "x" }] }), repos)).toMatchObject({
+    expect(parseReviewExtraction(result({ comments: [{ repo: "api", path: "a", line: 0, body: "x" }], questions: [] }), repos)).toMatchObject({
       ok: false,
     });
+    expect(parseReviewExtraction(result({ comments: [] }), repos)).toMatchObject({ ok: false, error: /questions/ });
   });
 });
 

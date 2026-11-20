@@ -21,7 +21,7 @@ This is a factory run of the `review` task: review the ticket's branch below wit
 2. `factory-stack`: the repos and the running Bunny stack, for running specs. There is no browser in this run.
 3. `code-review`, in each repo where `{{branch}}` differs from `origin/main`. The fixed point is `origin/main` and the spec is the ticket above, read with the PR body's Decisions.
 4. Fix the findings you're sure of. A finding is yours to fix when it has one clear fix that Oscar would plainly accept: a broken standard, a missed edge case, a small slip from the spec. Commit each fix on its own, with a spec where one fits, and run the specs covering the files you touched.
-   Leave a finding as a comment when it needs a product decision, has more than one sensible fix, or you aren't sure. Start a product call's finding with **Decision needed:**.
+   Leave a finding as a comment when it needs a product decision, has more than one sensible fix, or you aren't sure. Start a product call's finding with **Decision needed:**, and give it two to four options: at least two real ways to do it, plus leaving it as it is where that's a choice. Give each option what the user sees, what it costs, and your pick.
 5. Write one review, covering every changed repo, to the review path, in exactly this shape. The factory reads the two verdict headings, so write each once, with `PASS` or `CHANGES REQUESTED` and nothing else after the colon. The verdicts judge the branch **after** your fixes. An axis fails if any repo fails it.
 
 ```markdown
@@ -51,7 +51,7 @@ The retro reads this list.
 
 Take the findings from the `code-review` report; don't merge or rerank them across the two axes. Replace the placeholder text in each section: in the last, one line per rule, naming the hunk that made you want it, or `None.`
 
-After you exit, the factory resumes this session and asks for the findings you left that point at a line, to post as inline comments on the PR. Then it pushes your fixes and marks the PRs ready for review.
+After you exit, the factory resumes this session and asks for the findings you left that point at a line, to post as inline comments on the PR, and for each **Decision needed:** finding as a question card, to post on the ticket. Then it pushes your fixes and marks the PRs ready for review.
 
 ## Finish line
 
