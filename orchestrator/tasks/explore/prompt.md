@@ -46,7 +46,7 @@ One-way or two-way, and why.
 
 ## Open questions
 
-What Oscar has to settle before it's built, each with your recommended answer. `None.` only on an easy call.
+What Oscar has to settle before it's built. Each question gets two to four options: at least two real ways to do it, plus leaving it as it is where that's a choice. Give each option what the user sees, what it costs, and your pick. Whenever the options differ in what the user sees, in how the UI looks or behaves, add one side-by-side mockup of them, a column per option: `![what it shows]({{evidenceDir}}/<name>.png)`. `None.` only on an easy call.
 
 ## Decisions
 
@@ -55,7 +55,7 @@ The calls you made with no human to ask, one line each, or `None.`
 
 Add a `## Gaps` section at the end if the runner stopped you from checking something.
 
-After you exit, the factory resumes this session and asks for the verdict. It posts the findings on the ticket, and on an easy call it queues `implement`.
+After you exit, the factory resumes this session and asks for the verdict and the open questions as question cards. It posts the cards on the ticket above the findings, and on an easy call it queues `implement`.
 
 ## Finish line
 

@@ -72,25 +72,27 @@ review/prompt.md
 │                                   read with the PR body's Decisions (the prompt carries the open PR's
 │                                   body as context, e.g. for a change Oscar asked for that departs from it)
 ├── 4. fix what it's sure of        one clear fix Oscar would plainly accept; the rest stay findings,
-│                                   product calls marked "Decision needed"
+│                                   product calls marked "Decision needed", each with its options
 ├── 5. the review                   fixed headings: Fixed / Standards / Spec verdicts (after its fixes),
 │                                   Decisions, rules it wanted
 └── Finish line                     the review written, fixes committed with the ticket prefix, no push
 
 review/extract.md             not called by the agent: the factory resumes the session with it after
                                     the run, under `claude --json-schema`, for the findings it left that
-                                    point at a line, checked again with the same zod schema (`review.ts`).
-                                    If that fails, it resumes again with the error, up to 2 more times.
+                                    point at a line and its "Decision needed" findings as question cards,
+                                    checked again with the same zod schema (`review.ts`). If that fails,
+                                    it resumes again with the error, up to 2 more times.
                                     After pushing the fixes, it posts one GitHub review per open PR on the
                                     new head: the review as its body, those findings as inline comments (any
-                                    outside the diff are dropped).
+                                    outside the diff are dropped). On the ticket, the question cards go
+                                    above the review, which is folded.
 ```
 
 ### `explore`
 
 Starts from: the `oscar-factory:explore` label, which Oscar sets. It's optional: a ticket can go straight to `implement`.
 
-Ends with: findings and a verdict, and no commits. The factory posts the findings on the ticket, with any screenshots inline, as a comment tagged `explore findings`. On `easy-call` the ticket's label becomes `oscar-factory:implement`; on `human-needed`, a timeout or no readable verdict, it waits on Oscar.
+Ends with: findings and a verdict, and no commits. The factory posts the findings on the ticket, with any screenshots inline, as a comment tagged `explore findings`, with its open questions as question cards above them. On `easy-call` the ticket's label becomes `oscar-factory:implement`; on `human-needed`, a timeout or no readable verdict, it waits on Oscar.
 
 It works on `origin/main` only (`branch: "none"`): every repo is detached, the ticket's branch is never fetched, and nothing is pushed. It gets the browser for UI claims, and 20 minutes.
 
@@ -102,12 +104,15 @@ explore/prompt.md            Oscar's comments on the ticket, and the last findin
 │                                   screenshot), the 2–3 places it touches, schema change, one- or two-way door
 ├── 6. verdict                      easy-call: clear, uncontested, two-way; anything else human-needed
 ├── 7. the findings                 fixed headings: Verdict / Claims / Blast radius / Door / Open questions /
-│                                   Decisions (and Gaps)
+│                                   Decisions (and Gaps); each open question has options and,
+│                                   whenever what the user sees differs, a side-by-side mockup
 └── Finish line                     findings written, no commits, clean git status
 
 explore/extract.md           not called by the agent: the factory resumes the session with it under
-                                   `claude --json-schema` for `{ verdict }`, checked again with the same zod
-                                   schema (`findings.ts`), retried up to 2 times.
+                                   `claude --json-schema` for `{ verdict, questions }`, checked again with the
+                                   same zod schema (`findings.ts`), retried up to 2 times. The questions are
+                                   rendered as cards (`src/questions.ts`) above the findings, which fold
+                                   once the cards carry what Oscar must answer, or on an easy call.
 ```
 
 An `implement` run that creates gets Oscar's ticket comments, which refine the ticket, and the latest findings if there are any, as context, not the spec. Comments after the findings answer their open questions. An update's feedback skips them, as it skips every factory comment.

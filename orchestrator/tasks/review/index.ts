@@ -2,6 +2,7 @@
 // review file; the factory pushes the fixes, posts the rest as a GitHub review and marks the PRs
 // ready. It runs specs, so it gets `factory-stack`, but no browser or evidence. Then the
 // ticket waits on Oscar. The tree of its prompt is in tasks/README.md.
+import { questionReport } from "../../src/questions.ts";
 import { branchDiff } from "../../src/git.ts";
 import { getPrBody, markReady, postReview } from "../../src/github.ts";
 import { markForGithub } from "../../src/logic.ts";
@@ -10,11 +11,11 @@ import { promptVars, REVIEW } from "./prompt.ts";
 import {
   diffLines,
   extractionRetryPrompt,
-  parseReviewComments,
+  parseReviewExtraction,
   parseVerdict,
   placeComments,
   reviewComment,
-  reviewCommentsJsonSchema,
+  reviewExtractionJsonSchema,
   verdictLine,
 } from "./review.ts";
 
@@ -41,8 +42,8 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
     outputs: { review: REVIEW },
     // The findings it left that point at a line, for inline comments.
     pass: {
-      schema: reviewCommentsJsonSchema(repos),
-      parse: (text, stderr) => parseReviewComments(text, repos, stderr),
+      schema: reviewExtractionJsonSchema(repos),
+      parse: (text, stderr) => parseReviewExtraction(text, repos, stderr),
       retryPrompt: extractionRetryPrompt,
       needs: REVIEW,
     },
@@ -53,7 +54,7 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
     conclude: async ({ files, structured, passError, timedOut, newHeads, commits }: Outcome) => {
       const text = files.review!.trim();
       const verdict = text ? parseVerdict(text) : null;
-      const extracted = !text ? ({ ok: true, comments: [] } as const) : passResult(passError, () => parseReviewComments(structured, repos));
+      const extracted = !text ? ({ ok: true, comments: [], questions: [] } as const) : passResult(passError, () => parseReviewExtraction(structured, repos));
       const posted = await step.run("post-review", async () => {
         const urls: string[] = [];
         let placed = 0;
@@ -80,7 +81,7 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
         const errors = [
           !text ? "The agent wrote no review." : null,
           text && !verdict ? "The review has no readable verdict: each of `## Standards:` and `## Spec:` once, with PASS or CHANGES REQUESTED." : null,
-          text && !extracted.ok ? `No inline comments: ${extracted.error}` : null,
+          text && !extracted.ok ? `No inline comments or questions: ${extracted.error}` : null,
         ].filter((e): e is string => e !== null);
         const where = posted.urls.length
           ? `Posted on ${posted.urls.map(prRef).join(", ")} with ${plural(posted.placed, "inline comment")}${posted.dropped ? ` (${posted.dropped} dropped: not on a line in the diff)` : ""}, and marked ready for review.`
@@ -88,9 +89,16 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
         const fixes = commits ? ` Pushed ${plural(commits, "fix commit")}.` : "";
         const head = verdict ? `Reviewed: ${verdictLine(verdict)}. ${where}${fixes}` : `Reviewed, **without a readable verdict**. ${where}${fixes}`;
         // The missing verdict is already in the head line.
-        const notes = text && !extracted.ok ? [`⚠️ No inline comments: ${extracted.error}`] : [];
+        const notes = text && !extracted.ok ? [`⚠️ No inline comments or questions: ${extracted.error}`] : [];
+        // The findings are on the PR too: fold the review once the pass has carried its questions up.
         const report = text
-          ? [head, ...notes, text].join("\n\n")
+          ? questionReport({
+              head: [head, ...notes].join("\n\n"),
+              questions: extracted.ok ? extracted.questions : [],
+              title: "Full review",
+              body: text,
+              fold: extracted.ok,
+            })
           : timedOut
             ? `Timed out after ${timeLimitMinutes} minutes without writing a review.${fixes}`
             : `Finished without writing a review.${fixes}`;
