@@ -51,7 +51,7 @@ The retro reads this list.
 
 Take the findings from the `code-review` report; don't merge or rerank them across the two axes. Replace the placeholder text in each section: in the last, one line per rule, naming the hunk that made you want it, or `None.`
 
-After you exit, the factory resumes this session and asks for the findings you left that point at a line, to post as inline comments on the PR, and for each **Decision needed:** finding as a question card, to post on the ticket. Then it pushes your fixes and marks the PRs ready for review.
+After you exit, the factory resumes this session and asks for the findings you left that point at a line, to post as inline comments on the PR, and for each **Decision needed:** finding as a question card. Then it pushes your fixes and marks the PRs ready for review.
 
 ## Finish line
 
