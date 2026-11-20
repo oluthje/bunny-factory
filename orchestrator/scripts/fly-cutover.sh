@@ -217,17 +217,16 @@ say "Runs in flight on the laptop must finish first: Fly starts from a copy of i
 [[ "$(git rev-parse --abbrev-ref HEAD)" == "main" ]] || warn "You're on $(git rev-parse --abbrev-ref HEAD), not main: the first deploy ships this checkout."
 open_count() { sqlite3 "$ORCH/data/factory.db" "select count(*) from runs where status in ('requested','running')"; }
 while true; do
+  step "Stop the local orchestrator (npm run dev) and the Inngest dev server (npm run inngest)."
+  pause "Both stopped?"
   n=$(open_count)
   [[ "$n" == "0" ]] && break
-  warn "$n run(s) in flight locally:"
+  warn "$n run(s) were still in flight locally:"
   sqlite3 "$ORCH/data/factory.db" "select '    ' || ticket_identifier || '  ' || task || '  since ' || created_at from runs where status in ('requested','running')"
-  note "Let them finish, or close them yourself, then press Enter to check again."
-  pause "Check again?"
+  note "Start both again so they finish (remove the tickets' task labels first so nothing new starts), then stop them once more."
 done
-say "No runs in flight."
-step "Stop the local orchestrator (npm run dev) and the Inngest dev server (npm run inngest), and don't start them again."
+say "No runs in flight, and the local orchestrator is stopped. Don't start it again."
 note "From now on, local work means tests only. Without FACTORY_POLL=on the laptop starts no runs anyway."
-pause "Both stopped?"
 sqlite3 "$ORCH/data/factory.db" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null
 say "Folded the WAL into factory.db, so the one file holds everything."
 
@@ -251,9 +250,9 @@ fi
 stage "Set the secrets"
 say "Every value in .env goes up as it is, plus DATA_DIR=/data. Nothing is printed."
 note "FACTORY_POLL=on waits until the last stage, after the real factory.db is in place."
-note "Names: $(grep -oE '^[A-Z_]+=' "$ENV_FILE" | grep -vE '^(INNGEST_DEV|FACTORY_POLL|DATA_DIR)=' | tr -d = | tr '\n' ' ')"
+note "Names: $(grep -oE '^[A-Z_]+=' "$ENV_FILE" | grep -vE '^(INNGEST_DEV|FACTORY_POLL|DATA_DIR|PORT)=' | tr -d = | tr '\n' ' ')"
 confirm "Set these secrets on $APP?" || exit 1
-{ grep -E '^[A-Z_]+=' "$ENV_FILE" | grep -vE '^(INNGEST_DEV|FACTORY_POLL|DATA_DIR)='; echo "DATA_DIR=/data"; } \
+{ grep -E '^[A-Z_]+=' "$ENV_FILE" | grep -vE '^(INNGEST_DEV|FACTORY_POLL|DATA_DIR|PORT)='; echo "DATA_DIR=/data"; } \
   | fly secrets import -a "$APP" --stage
 fly secrets unset INNGEST_DEV -a "$APP" --stage >/dev/null 2>&1 || true
 

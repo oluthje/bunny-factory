@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.ts";
-import { closeIfOpen, getFactoryState, updateRun } from "../db/index.ts";
+import { closeIfOpen, getFactoryState, runStatus, updateRun } from "../db/index.ts";
 import { bundleForRun, importAndPush } from "../git.ts";
 import { commitIdentity, findOpenPr } from "../github.ts";
 import { RunHeartbeat } from "../heartbeat.ts";
@@ -92,6 +92,8 @@ export const runTicket = inngest.createFunction(
       const { runId, ticket, task } = event.data.event.data as RunRequested;
       await step.run("delete-leftover-sandbox", () => deleteSandbox(sandboxName(ticket.identifier, runId)));
       await step.run("mark-stopped", async () => {
+        // `factory stop --now` already requeued it: its labels stay as they are.
+        if (runStatus(runId) === "cancelled") return;
         closeIfOpen(runId, "failed");
         await applyLabels(ticket.id, finished(task, { status: "failed", next: "human" }));
       });
@@ -148,8 +150,8 @@ export const runTicket = inngest.createFunction(
 
       // 1c. `factory stop` drains: a run with no runner yet ends here, cancelled, and its ticket stays
       // queued. Checked again here, not only by the poller, since a run may wait in Inngest's queue.
-      const may = await step.run("may-start-runner", () => mayStartRuns(config.poll, getFactoryState().state));
-      if (!may) {
+      const mayStart = await step.run("may-start-runner", () => mayStartRuns(config.poll, getFactoryState().state));
+      if (!mayStart) {
         await step.run("requeue", () =>
           requeue({ runId, ticketId: ticket.id, text: "The factory was stopped before this run got a runner." }),
         );

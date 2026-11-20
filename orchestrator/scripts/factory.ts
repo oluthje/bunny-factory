@@ -13,7 +13,7 @@ import { config } from "../src/config.ts";
 import { closeIfOpen, getFactoryState, runsFinished, runsOpen, setFactoryState } from "../src/db/index.ts";
 import { volumeSpace } from "../src/disk.ts";
 import { inngest, RUN_STOP } from "../src/inngest.ts";
-import { sandboxName } from "../src/logic.ts";
+import { plural, sandboxName } from "../src/logic.ts";
 import { deleteSandbox, snapshotCreatedAt } from "../src/sandbox.ts";
 import { renderStatus, type StatusInput } from "../src/status.ts";
 import { requeue } from "../src/task.ts";
@@ -79,7 +79,7 @@ async function stopNow(): Promise<void> {
 }
 
 const [command, ...flags] = process.argv.slice(2);
-const now = flags.length === 1 && flags[0] === "--now";
+const immediate = flags.length === 1 && flags[0] === "--now";
 
 if (command === "status" && flags.length === 0) {
   await status();
@@ -87,14 +87,14 @@ if (command === "status" && flags.length === 0) {
   setFactoryState("running");
   console.log("Started: new runs start on the next poll.");
   if (config.poll !== "on") console.log("⚠ FACTORY_POLL isn't `on` on this machine, so it still starts none.");
-} else if (command === "stop" && (flags.length === 0 || now)) {
+} else if (command === "stop" && (flags.length === 0 || immediate)) {
   setFactoryState("stopped");
-  if (now) {
+  if (immediate) {
     await stopNow();
   } else {
     const left = runsOpen().length;
     console.log(
-      `Stopping: no new runs start. ${left} run${left === 1 ? "" : "s"} in flight: those with a runner finish, ` +
+      `Stopping: no new runs start. ${plural(left, "run")} in flight: those with a runner finish, ` +
         "queued ones end cancelled and keep their task label. `factory status` shows what's left.",
     );
   }

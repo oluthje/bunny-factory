@@ -1,7 +1,8 @@
 // What `factory status` prints (scripts/factory.ts): the factory's state, its runs in flight, the
 // last finished runs and the health checks, on one screen. Pure: the script gathers the input from
 // SQLite, the volume and Daytona; this only renders it. Unit-tested in test/status.test.ts.
-import { DISK_LOW, factoryMode, type FactoryState } from "./logic.ts";
+import type { RunRow } from "./db/index.ts";
+import { DAY_MS as DAY, DISK_LOW, factoryMode, plural, type FactoryState, type VolumeSpace } from "./logic.ts";
 
 export type StatusInput = {
   now: Date;
@@ -13,9 +14,9 @@ export type StatusInput = {
   maxRuns: number;
   inFlight: { ticket: string; task: string; step: string | null; createdAt: string }[];
   /** The last finished runs, newest first. */
-  recent: { ticket: string; task: string; status: string; createdAt: string; finishedAt: string; prUrls: string[] | null }[];
+  recent: { ticket: string; task: string; status: RunRow["status"]; createdAt: string; finishedAt: string; prUrls: string[] | null }[];
   lastPolledAt: string | null;
-  disk: { total: number; free: number };
+  disk: VolumeSpace;
   /** The day the GitHub PAT expires, `YYYY-MM-DD`. */
   patExpires: string;
   snapshot: { name: string; createdAt: string } | { error: string };
@@ -29,7 +30,6 @@ const SNAPSHOT_STALE_DAYS = 7;
 const PAT_WARN_DAYS = 7;
 
 const WARN = "⚠ ";
-const DAY = 86_400_000;
 const GB = 1024 ** 3;
 
 /** A span as `45s`, `12m`, `1h 15m`, `2h`, `2d 4h` or `3d`. */
@@ -52,7 +52,7 @@ function table(rows: string[][]): string[] {
 
 function stateLine(input: StatusInput): string {
   const mode = factoryMode(input.state, input.inFlight.length);
-  const shown = mode === "draining" ? `draining (${input.inFlight.length} run${input.inFlight.length === 1 ? "" : "s"} left)` : mode;
+  const shown = mode === "draining" ? `draining (${plural(input.inFlight.length, "run")} left)` : mode;
   const { commit, at } = input.deploy;
   const deployed = commit ? `deployed ${commit.slice(0, 7)}${at ? ` ${span(since(input.now, at))} ago (${at.slice(0, 16).replace("T", " ")} UTC)` : ""}` : "not a deploy";
   return `State      ${shown} · ${deployed}`;
@@ -81,7 +81,7 @@ function healthLines(input: StatusInput): string[] {
       ? `${WARN}${snap.error}`
       : (() => {
           const days = Math.floor(since(now, snap.createdAt) / DAY);
-          return `${days > SNAPSHOT_STALE_DAYS ? WARN : ""}${snap.name}, ${days} day${days === 1 ? "" : "s"} old`;
+          return `${days > SNAPSHOT_STALE_DAYS ? WARN : ""}${snap.name}, ${plural(days, "day")} old`;
         })();
 
   return table([

@@ -29,8 +29,8 @@ const CURSOR = "linear.updatedAt";
 export const pollLinear = inngest.createFunction(
   { id: "poll-linear", triggers: [{ cron: "* * * * *" }], concurrency: { limit: 1 } },
   async ({ step }) => {
-    const may = await step.run("may-start-runs", () => mayStartRuns(config.poll, getFactoryState().state));
-    if (!may) return { polled: false };
+    const mayStart = await step.run("may-start-runs", () => mayStartRuns(config.poll, getFactoryState().state));
+    if (!mayStart) return { polled: false };
 
     const tickets = await step.run("fetch-tickets", async () => {
       const found = await fetchOptedInTickets(getCursor(CURSOR));

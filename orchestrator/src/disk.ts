@@ -7,12 +7,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "./config.ts";
-import type { RunFolder } from "./logic.ts";
+import type { RunFolder, VolumeSpace } from "./logic.ts";
 
 const runsDir = () => path.join(config.dataDir, "runs");
 
 /** The volume's size and the bytes free to use on it. */
-export function volumeSpace(): { total: number; free: number } {
+export function volumeSpace(): VolumeSpace {
   const s = fs.statfsSync(config.dataDir);
   return { total: s.blocks * s.bsize, free: s.bavail * s.bsize };
 }

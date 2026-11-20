@@ -222,6 +222,9 @@ export function factoryMode(state: FactoryState, inFlight: number): "running" | 
   return inFlight > 0 ? "draining" : "stopped";
 }
 
+/** A day, in ms. */
+export const DAY_MS = 86_400_000;
+
 /** Run folders (`<dataDir>/runs/<id>`) are kept this long. SQLite rows are kept forever. */
 export const RUN_FOLDER_DAYS = 30;
 /** Below this share of the volume free, sweep-runs deletes run folders, oldest first... */
@@ -229,9 +232,11 @@ export const DISK_LOW = 0.2;
 /** ...until this share is free. */
 export const DISK_TARGET = 0.25;
 
-/** A run's folder on the data volume: `at` is when its run started (ms), `bytes` its size. */
+/** A run's folder on the data volume: `at` is when it last changed (ms), `bytes` its size. */
 export type RunFolder = { id: string; at: number; bytes: number };
 
+/** The data volume's size and the bytes free on it. */
+export type VolumeSpace = { total: number; free: number };
 /**
  * The run folders sweep-runs deletes: every one older than RUN_FOLDER_DAYS, and, when less than
  * DISK_LOW of the volume is free, the oldest of the rest until DISK_TARGET is free. A run in flight
@@ -241,10 +246,10 @@ export type RunFolder = { id: string; at: number; bytes: number };
 export function runFoldersToPrune(
   folders: readonly RunFolder[],
   inFlight: ReadonlySet<string>,
-  disk: { total: number; free: number },
+  disk: VolumeSpace,
   now: Date,
 ): string[] {
-  const maxAge = RUN_FOLDER_DAYS * 86_400_000;
+  const maxAge = RUN_FOLDER_DAYS * DAY_MS;
   const target = disk.free < disk.total * DISK_LOW ? disk.total * DISK_TARGET : 0;
   let free = disk.free;
   return [...folders]

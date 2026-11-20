@@ -83,7 +83,7 @@ The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has los
 
 **Starting and stopping.** A `factory_state` row in SQLite says whether the factory takes new runs; `factory stop` and `factory start` set it (the root `README.md` documents the CLI). The poller checks it every tick, and each run checks it again just before creating its sandbox. A machine starts runs only when the state allows it and its `FACTORY_POLL` secret is `on`, which only Fly has. A run the factory stops itself, by draining or by `stop --now`, ends `cancelled`, keeps its task label, and doesn't count toward the loop cap.
 
-**Deploys.** Every push to `main` runs the checks and deploys to Fly with GitHub Actions, then resyncs Inngest Cloud. A deploy goes out with runs in flight, and Inngest retries the step the restart cut off, so every step of a run is safe to run twice.
+**Deploys.** Every push to `main` runs the checks and deploys to Fly with GitHub Actions, then resyncs Inngest Cloud. A deploy goes out with runs in flight, and Inngest retries the step the restart cut off, so the steps a restart may cut off (creating the sandbox, uploading, starting Claude, pushing) are safe to run twice.
 
 ## Warm snapshot
 

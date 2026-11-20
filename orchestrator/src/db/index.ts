@@ -117,9 +117,9 @@ export function runsFinished(n: number): RunRow[] {
 }
 
 /** Whether the factory takes new runs, and when poll-linear last fetched tickets. No row means running. */
-export function getFactoryState(): { state: FactoryState; changedAt: string | null; lastPolledAt: string | null } {
+export function getFactoryState(): { state: FactoryState; lastPolledAt: string | null } {
   const row = db.select().from(factoryState).where(eq(factoryState.id, 1)).get();
-  return { state: row?.state ?? "running", changedAt: row?.changedAt ?? null, lastPolledAt: row?.lastPolledAt ?? null };
+  return { state: row?.state ?? "running", lastPolledAt: row?.lastPolledAt ?? null };
 }
 
 export function setFactoryState(state: FactoryState): void {
