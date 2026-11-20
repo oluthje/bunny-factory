@@ -49,8 +49,10 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
     },
 
     // One GitHub review per open PR, with the review as its body and the findings it left on their
-    // lines; the PRs marked ready; the review in full on the ticket. Code reads the verdict; a
-    // review without one is still posted for a human, but the run fails.
+    // lines; the PRs marked ready; on the ticket, only a line pointing at the PRs, so nothing on
+    // the ticket repeats the PR. With no PR to post on, the ticket gets the question cards and the
+    // review instead. Code reads the verdict; a review without one is still posted for a human, but
+    // the run fails.
     conclude: async ({ files, structured, passError, timedOut, newHeads, commits }: Outcome) => {
       const text = files.review!.trim();
       const verdict = text ? parseVerdict(text) : null;
@@ -90,15 +92,18 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
         const head = verdict ? `Reviewed: ${verdictLine(verdict)}. ${where}${fixes}` : `Reviewed, **without a readable verdict**. ${where}${fixes}`;
         // The missing verdict is already in the head line.
         const notes = text && !extracted.ok ? [`⚠️ No inline comments or questions: ${extracted.error}`] : [];
-        // The findings are on the PR too: fold the review once the pass has carried its questions up.
+        // Posted: the review and its decisions are on the PR, so the ticket only points there.
+        // Not posted: the ticket is the only place left, so it gets the cards and the folded review.
         const report = text
-          ? questionReport({
-              head: [head, ...notes].join("\n\n"),
-              questions: extracted.ok ? extracted.questions : [],
-              title: "Full review",
-              body: text,
-              fold: extracted.ok,
-            })
+          ? posted.urls.length
+            ? [head, ...notes].join("\n\n")
+            : questionReport({
+                head: [head, ...notes].join("\n\n"),
+                questions: extracted.ok ? extracted.questions : [],
+                title: "Full review",
+                body: text,
+                fold: extracted.ok,
+              })
           : timedOut
             ? `Timed out after ${timeLimitMinutes} minutes without writing a review.${fixes}`
             : `Finished without writing a review.${fixes}`;
