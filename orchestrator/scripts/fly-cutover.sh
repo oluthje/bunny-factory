@@ -236,13 +236,13 @@ fly auth whoami >/dev/null 2>&1 || { warn "flyctl isn't logged in: run 'fly auth
 if fly apps list --json 2>/dev/null | grep -q "\"$APP\""; then
   say "App $APP already exists."
 else
-  confirm "Create the app $APP in your personal org?" || exit 1
+  confirm "Create the app $APP in your personal org?" || { warn "Every later stage needs the app: stopping here."; exit 1; }
   fly apps create "$APP" --org personal
 fi
 if fly volumes list -a "$APP" --json 2>/dev/null | grep -q '"factory_data"'; then
   say "Volume factory_data already exists."
 else
-  confirm "Create the 40 GB volume factory_data in iad?" || exit 1
+  confirm "Create the 40 GB volume factory_data in iad?" || { warn "The deploy needs the volume: stopping here."; exit 1; }
   fly volumes create factory_data --size 40 --region iad -a "$APP" --yes
 fi
 
@@ -251,30 +251,41 @@ stage "Set the secrets"
 say "Every value in .env goes up as it is, plus DATA_DIR=/data. Nothing is printed."
 note "FACTORY_POLL=on waits until the last stage, after the real factory.db is in place."
 note "Names: $(grep -oE '^[A-Z_]+=' "$ENV_FILE" | grep -vE '^(INNGEST_DEV|FACTORY_POLL|DATA_DIR|PORT)=' | tr -d = | tr '\n' ' ')"
-confirm "Set these secrets on $APP?" || exit 1
-{ grep -E '^[A-Z_]+=' "$ENV_FILE" | grep -vE '^(INNGEST_DEV|FACTORY_POLL|DATA_DIR|PORT)='; echo "DATA_DIR=/data"; } \
-  | fly secrets import -a "$APP" --stage
-fly secrets unset INNGEST_DEV -a "$APP" --stage >/dev/null 2>&1 || true
+if confirm "Set these secrets on $APP?"; then
+  { grep -E '^[A-Z_]+=' "$ENV_FILE" | grep -vE '^(INNGEST_DEV|FACTORY_POLL|DATA_DIR|PORT)='; echo "DATA_DIR=/data"; } \
+    | fly secrets import -a "$APP" --stage
+  fly secrets unset INNGEST_DEV -a "$APP" --stage >/dev/null 2>&1 || true
+else
+  SKIPPED+=("Fly secrets from .env (the machine can't run without them)")
+fi
 
 # ── 4 ────────────────────────────────────────────────────────────────────
 stage "The first deploy"
 say "Builds the image on Fly's builder and starts the one machine. It polls nothing yet."
-confirm "Deploy $(git rev-parse --short HEAD) now?" || exit 1
-(cd "$ORCH" && fly deploy --remote-only --ha=false \
-  --build-arg FACTORY_COMMIT="$(git rev-parse HEAD)" \
-  --build-arg FACTORY_DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)")
-curl --fail --silent https://$APP.fly.dev/health >/dev/null && say "Health check answers." || warn "https://$APP.fly.dev/health doesn't answer yet: check 'fly logs -a $APP'."
+if confirm "Deploy $(git rev-parse --short HEAD) now?"; then
+  (cd "$ORCH" && fly deploy --remote-only --ha=false \
+    --build-arg FACTORY_COMMIT="$(git rev-parse HEAD)" \
+    --build-arg FACTORY_DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+  curl --fail --silent https://$APP.fly.dev/health >/dev/null && say "Health check answers." || warn "https://$APP.fly.dev/health doesn't answer yet: check 'fly logs -a $APP'."
+else
+  SKIPPED+=("the first deploy (stage 5 needs a running machine)")
+fi
 
 # ── 5 ────────────────────────────────────────────────────────────────────
 stage "Copy factory.db up to the volume"
 say "Uploads the laptop's factory.db, copies it over the empty one with SQLite's backup, then restarts."
-confirm "Replace the machine's factory.db with the laptop's?" || exit 1
-fly ssh console -a "$APP" -C "rm -f /data/incoming.db" >/dev/null 2>&1 || true
-fly ssh sftp put "$ORCH/data/factory.db" /data/incoming.db -a "$APP"
-fly ssh console -a "$APP" -C "node -e \"const D=require('/app/node_modules/better-sqlite3'); new D('/data/incoming.db',{readonly:true}).backup('/data/factory.db').then(()=>console.log('restored'))\""
-fly ssh console -a "$APP" -C "rm -f /data/incoming.db"
-fly apps restart "$APP"
-note "The restart runs the new migrations against the copied database."
+note "Skip it to start from an empty database: no poll cursor (the first poll takes every labelled ticket),"
+note "loop-cap counts start at zero, and implement's first update on a ticket treats every comment as new."
+if confirm "Replace the machine's factory.db with the laptop's?"; then
+  fly ssh console -a "$APP" -C "rm -f /data/incoming.db" >/dev/null 2>&1 || true
+  fly ssh sftp put "$ORCH/data/factory.db" /data/incoming.db -a "$APP"
+  fly ssh console -a "$APP" -C "node -e \"const D=require('/app/node_modules/better-sqlite3'); new D('/data/incoming.db',{readonly:true}).backup('/data/factory.db').then(()=>console.log('restored'))\""
+  fly ssh console -a "$APP" -C "rm -f /data/incoming.db"
+  fly apps restart "$APP"
+  note "The restart runs the new migrations against the copied database."
+else
+  say "Skipped: the machine keeps its empty factory.db."
+fi
 
 # ── 6 ────────────────────────────────────────────────────────────────────
 stage "Inngest Cloud: sync the app"
@@ -289,11 +300,18 @@ pause "Synced, keys checked and failure emails on?"
 
 # ── 7 ────────────────────────────────────────────────────────────────────
 stage "Start the factory, and let GitHub deploy from now on"
-confirm "Set FACTORY_POLL=on, so the Fly machine starts runs?" || exit 1
-fly secrets set FACTORY_POLL=on -a "$APP"
-say "Creating an app-scoped deploy token for the GitHub Action (never shown)."
-set_secret FLY_API_TOKEN "$(fly tokens create deploy -a "$APP" -x 8760h)"
-note "The token lasts a year. Every push to main now checks, deploys and resyncs Inngest."
+if confirm "Set FACTORY_POLL=on, so the Fly machine starts runs?"; then
+  fly secrets set FACTORY_POLL=on -a "$APP"
+else
+  SKIPPED+=("FACTORY_POLL=on (later: fly secrets set FACTORY_POLL=on -a $APP)")
+fi
+if confirm "Create a deploy token and set it as the GitHub secret FLY_API_TOKEN?"; then
+  say "Creating an app-scoped deploy token for the GitHub Action (never shown)."
+  set_secret FLY_API_TOKEN "$(fly tokens create deploy -a "$APP" -x 8760h)"
+  note "The token lasts a year. Every push to main now checks, deploys and resyncs Inngest."
+else
+  SKIPPED+=("FLY_API_TOKEN (pushes to main fail their deploy until it's set)")
+fi
 say "The factory now:"
 fly ssh console -a "$APP" -C "node /app/scripts/factory.ts status" || warn "factory status failed: see 'fly logs -a $APP'."
 pause "Done?"
