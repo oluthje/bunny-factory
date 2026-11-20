@@ -111,8 +111,8 @@ export function passResult<R extends Parsed>(passError: string | null, reparse: 
   return passError ? { ok: false, error: passError } : reparse();
 }
 
-export const prRef = (u: string) => `[${u.replace("https://github.com/", "").replace("/pull/", "#")}](${u})`;
-export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+// Pure helpers, kept in logic.ts so pure modules can use them without the database.
+export { plural, prRef } from "./logic.ts";
 
 /** The end of the run's Linear report: what the ticket's labels now ask for. */
 function handoffLine(end: RunEnd): string {

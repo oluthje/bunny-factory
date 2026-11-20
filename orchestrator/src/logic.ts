@@ -76,6 +76,10 @@ export function decideRuns<T>(
     });
 }
 
+/** A PR's URL as a short Markdown link: `[bunnyapp/app#3534](…)`. */
+export const prRef = (u: string) => `[${u.replace("https://github.com/", "").replace("/pull/", "#")}](${u})`;
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 export function sandboxName(identifier: string, runId: string): string {
   return `oscar-factory-${identifier}-${runId.slice(0, 8)}`.toLowerCase();
 }
