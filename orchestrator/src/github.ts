@@ -1,5 +1,6 @@
 import { config } from "./config.ts";
 import type { PrComment, ReviewThread } from "./comments.ts";
+import type { CheckRun, CommitStatus } from "./checks.ts";
 
 async function gh<T>(method: string, pathname: string, body?: unknown): Promise<T> {
   const res = await fetch(`https://api.github.com${pathname}`, {
@@ -13,7 +14,8 @@ async function gh<T>(method: string, pathname: string, body?: unknown): Promise<
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`GitHub ${method} ${pathname}: ${res.status} ${await res.text()}`);
-  return (await res.json()) as T;
+  // A DELETE answers 204 with no body.
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
 /** Commit identity for the sandbox: the PAT owner's noreply address, so no real email leaks. */
@@ -164,4 +166,93 @@ export async function markReady(url: string): Promise<void> {
   await graphql(`mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }`, {
     id: pr.node_id,
   });
+}
+
+/** The PR's reviews that have a body, oldest first: the factory's own review is one. Up to 100. */
+export async function prReviews(url: string): Promise<PrComment[]> {
+  const { repo, number } = parsePrUrl(url);
+  const list = await gh<{ body: string | null; submitted_at: string | null; user: { login: string } | null }[]>(
+    "GET",
+    `/repos/${config.githubOwner}/${repo}/pulls/${number}/reviews?per_page=100`,
+  );
+  return list
+    .filter((r) => r.body?.trim())
+    .map((r) => ({ repo, author: r.user?.login ?? "ghost", body: r.body!, createdAt: r.submitted_at ?? "" }));
+}
+
+export type PrState = {
+  repo: string;
+  draft: boolean;
+  /** False when it conflicts with its base; null while GitHub is still working it out. */
+  mergeable: boolean | null;
+  /** GitHub's `mergeable_state`: `clean`, `unstable`, `has_hooks`, `behind`, `blocked`, `dirty`, `draft` or `unknown`. */
+  mergeableState: string;
+  base: string;
+  headSha: string;
+  open: boolean;
+};
+
+/**
+ * The PR as GitHub sees it now. GitHub works out whether a PR can merge only when asked, so a
+ * first answer of `mergeable: null` is asked again, a few seconds apart.
+ */
+export async function prState(url: string): Promise<PrState> {
+  const { repo, number } = parsePrUrl(url);
+  type Pr = { draft: boolean; mergeable: boolean | null; mergeable_state: string; state: string; base: { ref: string }; head: { sha: string } };
+  let pr = await gh<Pr>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`);
+  for (let i = 0; pr.mergeable === null && i < 4; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    pr = await gh<Pr>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`);
+  }
+  return {
+    repo,
+    draft: pr.draft,
+    mergeable: pr.mergeable,
+    mergeableState: pr.mergeable_state,
+    base: pr.base.ref,
+    headSha: pr.head.sha,
+    open: pr.state === "open",
+  };
+}
+
+/** Every check run (the latest of each) and commit status on the commit. Up to 100 of each. */
+export async function commitChecks(repo: string, sha: string): Promise<{ runs: CheckRun[]; statuses: CommitStatus[] }> {
+  const owner = config.githubOwner;
+  const runs = await gh<{ check_runs: { name: string; status: string; conclusion: string | null }[] }>(
+    "GET",
+    `/repos/${owner}/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`,
+  );
+  const combined = await gh<{ statuses: { context: string; state: string }[] }>(
+    "GET",
+    `/repos/${owner}/${repo}/commits/${sha}/status?per_page=100`,
+  );
+  return {
+    runs: runs.check_runs.map((r) => ({ name: r.name, status: r.status, conclusion: r.conclusion })),
+    statuses: combined.statuses.map((s) => ({ context: s.context, state: s.state })),
+  };
+}
+
+/**
+ * Merges the PR with a merge commit, only if its head is still `sha`: anything pushed since makes
+ * GitHub refuse, rather than merge code nobody judged.
+ */
+export async function mergePr(url: string, sha: string): Promise<void> {
+  const { repo, number } = parsePrUrl(url);
+  await gh("PUT", `/repos/${config.githubOwner}/${repo}/pulls/${number}/merge`, { sha, merge_method: "merge" });
+}
+
+/** Deletes the branch; a no-op when the repo already deleted it on merge. */
+export async function deleteBranch(repo: string, branch: string): Promise<void> {
+  try {
+    await gh("DELETE", `/repos/${config.githubOwner}/${repo}/git/refs/heads/${branch}`);
+  } catch (err) {
+    // 422 "Reference does not exist": the repo deletes merged branches itself.
+    if (!(err instanceof Error && /: 422 /.test(err.message))) throw err;
+  }
+}
+
+/** A conversation comment on the PR. */
+export async function commentOnPr(url: string, body: string): Promise<void> {
+  const { repo, number } = parsePrUrl(url);
+  await gh("POST", `/repos/${config.githubOwner}/${repo}/issues/${number}/comments`, { body });
 }
