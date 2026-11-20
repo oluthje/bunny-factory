@@ -29,7 +29,6 @@ export const implement: Task = {
   browser: true,
   branch: "optional",
   timeLimitMinutes: null,
-  delivers: "the PR",
   prepare,
 };
 

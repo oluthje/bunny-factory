@@ -16,7 +16,6 @@ export const explore: Task = {
   browser: true,
   branch: "none",
   timeLimitMinutes: 20,
-  delivers: "its findings",
   prepare,
 };
 

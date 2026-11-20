@@ -24,7 +24,6 @@ export const review: Task = {
   browser: false,
   branch: "required",
   timeLimitMinutes: null,
-  delivers: "the review",
   prepare,
 };
 

@@ -21,7 +21,6 @@ import { finished, nextTask, type RunEnd } from "./transitions.ts";
  *   main where it isn't; `required` fails the run when no repo has it on GitHub; `none` never
  *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
- * - `delivers`: what the pickup comment says the run will come back with.
  * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs.
  */
 export type Task = {
@@ -30,7 +29,6 @@ export type Task = {
   browser: boolean;
   branch: "optional" | "required" | "none";
   timeLimitMinutes: number | null;
-  delivers: string;
   prepare: (ctx: RunContext) => Promise<Prepared>;
 };
 
