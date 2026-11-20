@@ -52,7 +52,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
     - links from ticket to branch to PR to runs, for loop caps
     - snapshot metadata
     - run records
-11. **One ephemeral sandbox per run.** Auto-stop is off, because background processes don't reset it. Inngest's hard timeout (about 60 minutes) is the only clock. The sandbox is deleted however the run ends, which also keeps Tier 1 disk quota free.
+11. **One ephemeral sandbox per run.** Auto-stop is off, because background processes don't reset it. The run deletes the sandbox however it ends, which also keeps Tier 1 disk quota free. As a backstop, each sandbox gets a Daytona wall-clock TTL: Claude's time limit plus the run's other steps. When the TTL runs out, Daytona destroys the sandbox even if the orchestrator has lost the run.
 12. **Fly learns that a run has finished by polling Daytona** every 30–60 seconds. The sandbox holds no credential for any factory service.
 13. **The Claude token goes in as a Daytona Secret.** The sandbox sees only a placeholder, which Daytona's proxy swaps for the real token on HTTPS requests to Anthropic.
 14. **The warm snapshot is built by a script on your Mac**, passing the PAT as a build-time secret, then pushed to Daytona. You rebuild it when Fly says to (see below). Automate the build later with an Inngest-triggered builder sandbox.
@@ -62,7 +62,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 ## A run's lifecycle
 
 1. Fly checks the snapshot is still valid: the same Ruby and Node versions and private gem versions as the target `main`. On a mismatch, the run doesn't start and you're told to rebuild.
-2. Fly creates the sandbox from the warm snapshot, with auto-stop off and the Claude token as a Daytona Secret.
+2. Fly creates the sandbox from the warm snapshot, with auto-stop off, a wall-clock TTL, and the Claude token as a Daytona Secret.
 3. Fly uploads a git bundle of the base or PR branch.
 4. The sandbox catches up and starts the stack: `bundle install`, `npm install` (not `npm ci`), `db:migrate`, then `bunny-stack up`.
 5. Fly starts `claude -p …` in a background Daytona session.
@@ -75,7 +75,10 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 8. Fly pushes the branch and opens or updates the PR as you, then posts a marked comment with screenshots to Linear.
 9. Fly deletes the sandbox.
 
-A **sweeper cron** collects artifacts from any factory sandbox with no live run, then deletes it.
+The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has lost, for example when the Inngest dev server restarts mid-run, which drops its in-memory state. A lost run never reaches its own cleanup, so it would hold one of the poller's `FACTORY_MAX_RUNS` slots forever.
+- Every call Inngest makes to a run records a heartbeat on the run's row. If a run in flight has no heartbeat for 30 minutes, the sweeper deletes its sandbox and closes the run as failed, and the ticket goes to `oscar-factory:human-needed`.
+- It also deletes any factory sandbox whose run has finished. It leaves alone sandboxes of runs it doesn't know, since another orchestrator may share the Daytona account.
+- It doesn't collect artifacts from these sandboxes.
 
 ## Warm snapshot
 

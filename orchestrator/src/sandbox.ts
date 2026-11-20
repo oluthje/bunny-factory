@@ -7,13 +7,19 @@ import { asDaytona } from "./logic.ts";
 let client: Daytona | undefined;
 const daytona = () => (client ??= new Daytona({ apiKey: config.daytonaApiKey() }));
 
-export async function createSandbox(name: string, runId: string): Promise<string> {
+/**
+ * Creates the run's sandbox. The run deletes it however it ends; `lifetimeMinutes`, longer than the
+ * run can last, is the backstop for a run the orchestrator has lost: Daytona destroys the sandbox
+ * that long after creating it, whatever its state. Auto-stop stays off: background processes such
+ * as Claude don't count as activity, so it could stop a busy run.
+ */
+export async function createSandbox(name: string, runId: string, lifetimeMinutes: number): Promise<string> {
   const sb = await daytona().create(
     {
       snapshot: config.snapshot(),
       name,
-      // Background processes don't reset auto-stop, so it's off; the run deletes the sandbox.
       autoStopInterval: 0,
+      ttlMinutes: lifetimeMinutes,
       labels: { purpose: "factory", owner: "oscar", run: runId },
       secrets: { CLAUDE_CODE_OAUTH_TOKEN: config.claudeSecret },
     },
@@ -24,6 +30,15 @@ export async function createSandbox(name: string, runId: string): Promise<string
 
 export async function getSandbox(id: string): Promise<Sandbox> {
   return daytona().get(id);
+}
+
+/** Every factory sandbox, with the run it was made for. Includes another orchestrator's, if one shares the account. */
+export async function listFactorySandboxes(): Promise<{ id: string; name: string; runId: string | undefined }[]> {
+  const found: { id: string; name: string; runId: string | undefined }[] = [];
+  for await (const sb of daytona().list({ labels: { purpose: "factory", owner: "oscar" } })) {
+    found.push({ id: sb.id, name: sb.name, runId: sb.labels?.run });
+  }
+  return found;
 }
 
 /** Deletes the sandbox; a sandbox that is already gone counts as deleted. */

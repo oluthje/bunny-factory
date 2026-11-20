@@ -14,6 +14,7 @@ import { config } from "../config.ts";
 import { closeIfOpen, updateRun } from "../db/index.ts";
 import { bundleForRun, importAndPush } from "../git.ts";
 import { commitIdentity, findOpenPr } from "../github.ts";
+import { RunHeartbeat } from "../heartbeat.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
 import { applyLabels } from "../linear.ts";
 import { parseChangedRepos, sandboxName, shQuote, type Ticket } from "../logic.ts";
@@ -39,6 +40,14 @@ const PASS_OUT = `${ARTIFACTS}/structured-output.json`;
 const PASS_SCHEMA = `${RUN_DIR}/structured-output.schema.json`;
 /** How long the structured-output pass may take: it only answers from the session, with no tools. */
 const PASS_TIMEOUT_SECONDS = 600;
+/** The most polls of catch-up, 15 seconds apart. */
+const CATCH_UP_POLLS = 80;
+/**
+ * How long a run may last beyond Claude's time limit, for the sandbox's wall-clock lifetime: catch-up,
+ * every structured-output attempt, and half an hour for bundles in and out.
+ */
+const RUN_OVERHEAD_MINUTES =
+  (CATCH_UP_POLLS * 15) / 60 + ((STRUCTURED_RETRIES + 1) * PASS_TIMEOUT_SECONDS) / 60 + 30;
 
 /** Playwright MCP, pointed at the snapshot's Chromium. Screenshots and videos land in the evidence dir; `devtools` adds the video tools. */
 const MCP_CONFIG = {
@@ -72,6 +81,8 @@ export const runTicket = inngest.createFunction(
     // its life in step.sleep, which frees the slot. The poller keeps at most `maxRuns` in flight
     // (poll-linear.ts); this only matches it, so every run's steps can execute.
     concurrency: { limit: config.maxRuns },
+    // Records a heartbeat on every call, so sweep-runs can tell a run Inngest has lost.
+    middleware: [RunHeartbeat],
     retries: 2,
     onFailure: async ({ event, step }) => {
       // Backstop: the run's own cleanup normally does this. The record is closed first, or the
@@ -137,7 +148,7 @@ export const runTicket = inngest.createFunction(
       sandboxId = await step.run("create-sandbox", async () => {
         const name = sandboxName(ticket.identifier, runId);
         const existing = await getSandbox(name).catch(() => null);
-        const id = existing?.id ?? (await createSandbox(name, runId));
+        const id = existing?.id ?? (await createSandbox(name, runId, timeLimitMinutes + RUN_OVERHEAD_MINUTES));
         updateRun(runId, { status: "running", sandboxId: id, snapshot: config.snapshot(), branch });
         return id;
       });
@@ -201,7 +212,7 @@ export const runTicket = inngest.createFunction(
           ),
         }));
         let catchUpExit: number | null = null;
-        for (let i = 0; catchUpExit === null && i < 80; i++) {
+        for (let i = 0; catchUpExit === null && i < CATCH_UP_POLLS; i++) {
           await step.sleep(`catch-up-wait-${i}`, "15s");
           catchUpExit = await step.run(`catch-up-poll-${i}`, async () =>
             exitCodeOf(await getSandbox(id), "catch-up", catchUp.cmdId),
