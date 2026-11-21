@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# The fac CLI, short for factory: status, start, stop and stop --now on the Fly machine. Each command runs
+# The fac CLI, short for factory: status, start, stop, stop --now and deepen on the Fly machine. Each command runs
 # orchestrator/scripts/factory.ts inside the machine, over `fly ssh console`, against its SQLite.
 # Symlink it onto your PATH: ln -s "$PWD/bin/fac" ~/.local/bin/fac. See README.md.
 set -euo pipefail
 
 case "${1:-} ${2:-}" in
   "status "|"start "|"stop "|"stop --now") ;;
-  *) echo "Usage: fac status | start | stop | stop --now" >&2; exit 2 ;;
+  # The direction is free text and reaches the machine as plain words: letters, digits and . , / _ - only.
+  deepen\ *) plain='^[A-Za-z0-9 .,/_-]*$'
+    [[ "${*:2}" =~ $plain ]] || { echo "fac deepen: keep the direction to letters, digits and . , / _ -" >&2; exit 2; } ;;
+  *) echo "Usage: fac status | start | stop | stop --now | deepen [direction]" >&2; exit 2 ;;
 esac
 
 exec fly ssh console -a oscar-bunny-factory -C "node /app/scripts/factory.ts $*"

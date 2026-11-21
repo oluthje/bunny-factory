@@ -1,24 +1,29 @@
 // The `fac` CLI's commands, run inside the Fly machine by `bin/fac` (over `fly ssh
 // console`), so they work on the machine's SQLite directly. The root README.md documents them.
 //
-//   node scripts/factory.ts status | start | stop | stop --now
+//   node scripts/factory.ts status | start | stop | stop --now | deepen [direction]
 //
 // - `start`: new runs start again (poll-linear and run-ticket check the state, factory_state).
 // - `stop`: drains. No new run starts; a queued run with no runner yet ends cancelled and keeps its
 //   task label (run-ticket, `may-start-runner`); runs that have a runner finish.
 // - `stop --now`: also cancels every run in flight: its record closed, its Inngest run cancelled,
 //   its runner deleted, and its ticket's task label put back (task.ts, `requeue`).
+// - `deepen`: files a deepen-scan ticket, the one its clock files (tasks/deepen-scan/ticket.ts), with
+//   the rest of the line as the direction to look in. The poller starts the run from its label.
 // The screen `status` prints is rendered by src/status.ts.
 import { config } from "../src/config.ts";
 import { closeIfOpen, getFactoryState, runsFinished, runsOpen, setFactoryState } from "../src/db/index.ts";
 import { volumeSpace } from "../src/disk.ts";
 import { inngest, RUN_STOP } from "../src/inngest.ts";
+import { taskLabel } from "../src/labels.ts";
+import { createTicket } from "../src/linear.ts";
 import { plural, sandboxName } from "../src/logic.ts";
 import { deleteSandbox, snapshotCreatedAt } from "../src/sandbox.ts";
 import { renderStatus, type StatusInput } from "../src/status.ts";
 import { requeue } from "../src/task.ts";
+import { scanTicket } from "../tasks/deepen-scan/ticket.ts";
 
-const USAGE = "Usage: fac status | start | stop | stop --now";
+const USAGE = "Usage: fac status | start | stop | stop --now | deepen [direction]";
 
 async function snapshot(): Promise<StatusInput["snapshot"]> {
   try {
@@ -78,11 +83,22 @@ async function stopNow(): Promise<void> {
   if (open.length === 0) console.log("No runs were in flight.");
 }
 
+/** Files a deepen-scan ticket now, whatever the clock's throttle says: Oscar asked for this one. */
+async function deepen(direction: string): Promise<void> {
+  const filed = await createTicket({ ...scanTicket(new Date(), config.timeZone, direction), labels: [taskLabel("deepen-scan")] });
+  console.log(`Filed ${filed.identifier}: ${filed.url}`);
+  const { state } = getFactoryState();
+  if (config.poll !== "on" || state !== "running") console.log("⚠ The factory isn't starting runs now: the scan starts after `fac start`.");
+  else console.log("The scan starts on the next poll.");
+}
+
 const [command, ...flags] = process.argv.slice(2);
 const immediate = flags.length === 1 && flags[0] === "--now";
 
 if (command === "status" && flags.length === 0) {
   await status();
+} else if (command === "deepen") {
+  await deepen(flags.join(" "));
 } else if (command === "start" && flags.length === 0) {
   setFactoryState("running");
   console.log("Started: new runs start on the next poll.");

@@ -12,7 +12,7 @@ A system of agents that turns tickets, PRs and schedules into merged code, deplo
 ## Tasks and runs
 
 **Task**:
-A kind of work the factory performs, defined once and run many times: explore, implement, review, merge, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
+A kind of work the factory performs, defined once and run many times: explore, implement, review, merge, deepen-scan, deepen-refute, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
 _Avoid_: job, workflow, action
 
 **Trigger**:
@@ -25,6 +25,10 @@ _Avoid_: session
 **Runner**:
 The disposable machine a run executes on. Nothing on it survives the run: a run's only memory of earlier runs is the ticket tracker, the git host and the orchestrator.
 _Avoid_: server, host, box, compute, sandbox
+
+**Candidate**:
+One deepening a deepen-scan run proposes: a refactor that would turn shallow modules into a deep one. Each strong candidate gets its own ticket, where a deepen-refute run argues against it and recommends `do it`, `don't` or `not yet`. A human decides.
+_Avoid_: suggestion, opportunity, proposal
 
 ## Services
 

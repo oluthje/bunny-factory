@@ -24,6 +24,14 @@ export const config = {
    */
   mergeDryRun: (process.env.FACTORY_MERGE_DRY_RUN ?? "true") !== "false",
 
+  /** The time zone clock triggers fire in, and the one a ticket the factory files is dated in. */
+  timeZone: process.env.FACTORY_TZ ?? "America/Los_Angeles",
+  /**
+   * When the clock files a deepen-scan ticket: a five-field cron in `timeZone`, such as
+   * `0 7 * * 1,4`. Unset, the clock is off and only `fac deepen` files one.
+   */
+  deepenScanCron: process.env.FACTORY_DEEPEN_SCAN_CRON?.trim() || null,
+
   snapshot: () => required("FACTORY_SNAPSHOT"),
   claudeSecret: process.env.CLAUDE_SECRET ?? "claude-oauth-token",
   /** How long Claude may run before the factory gives up. */

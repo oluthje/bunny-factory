@@ -19,7 +19,7 @@ Everything else in `tasks/<task>/` is orchestrator code, and stays on the orches
 
 Permissions stay on the command line (`--dangerously-skip-permissions` in `src/functions/run-ticket.ts`), and the Playwright MCP server stays in `--mcp-config`, passed only to tasks with `browser: true`: Claude Code doesn't read MCP servers from `settings.json`.
 
-**The prompt is the one place to read a task.** It lists every skill call, in order, always with the Skill tool except for a skill marked `disable-model-invocation`, which it reads by path (see the root `CLAUDE.md`; today only `implement`), and ends with the run's finish line. No skill tells the agent to go and read another skill, except a wrapper calling the skill it wraps (below). An upstream copy that calls another (like `implement` → `tdd`) is named in the prompt too.
+**The prompt is the one place to read a task.** It lists every skill call, in order, always with the Skill tool except for a skill marked `disable-model-invocation`, which it reads by path (see the root `CLAUDE.md`; today `implement` and `improve-codebase-architecture`), and ends with the run's finish line. No skill tells the agent to go and read another skill, except a wrapper calling the skill it wraps (below). An upstream copy that calls another (like `implement` → `tdd`) is named in the prompt too.
 
 ## Skills
 
@@ -28,8 +28,9 @@ Permissions stay on the command line (`--dangerously-skip-permissions` in `src/f
 | `factory-rules` | The rules every run follows: headless decisions, time budget, fixed point, gaps | all |
 | `factory-stack` | Reference for the Bunny stack in the runner: repos, services, specs, login, known gaps | `implement`, `review`, `explore` |
 | `factory-evidence` | Before-and-after screenshots or videos for a visual change | `implement` |
-| `implement`, `tdd`, `codebase-design` | Matt Pocock's skills, copied from `~/development/.claude/skills` on 2026-11-18 | `implement` |
+| `implement`, `tdd`, `codebase-design` | Matt Pocock's skills, copied from `~/development/.claude/skills` on 2026-11-18 | `implement`; `codebase-design` also `deepen-scan`, `deepen-refute` |
 | `code-review` | Matt Pocock's, same copy | `implement`, `review` |
+| `improve-codebase-architecture` | Matt Pocock's, copied from `.agents/skills` on 2026-11-20 (`skills-lock.json` has the commit) | `deepen-scan`, `deepen-refute` (only its `HTML-REPORT.md`) |
 | `pr` | Dex Horthy's `show-me`, via `~/development/.claude/skills/pr` (see its `CREDITS.md`) | `implement` |
 
 The `factory-` skills are ours. The others are **read-only copies**: refresh them from source, never edit them. To change how one behaves in a run, say so in the task's prompt, at the step that calls it (as `implement`'s prompt does to run `implement`'s closing `code-review` as a step of its own).

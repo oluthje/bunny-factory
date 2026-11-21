@@ -30,6 +30,7 @@ export const implement: Task = {
   stack: true,
   branch: "optional",
   timeLimitMinutes: null,
+  clock: null,
   prepare,
 };
 

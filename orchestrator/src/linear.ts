@@ -82,6 +82,75 @@ export async function ticketComments(ticketId: string): Promise<TicketComment[]>
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+let team: Promise<string> | undefined;
+
+/** The factory's team's id, cached. */
+function teamId(): Promise<string> {
+  return (team ??= (async () => {
+    const id = (await linear().teams({ filter: { key: { eq: config.linearTeam } } })).nodes[0]?.id;
+    if (!id) throw new Error(`Linear team ${config.linearTeam} not found`);
+    return id;
+  })());
+}
+
+export type NewTicket = { title: string; description: string; labels: string[] };
+export type FiledTicket = { id: string; identifier: string; url: string };
+
+/**
+ * Files a ticket in the factory's team, assigned to the owner of LINEAR_API_KEY (Oscar), so the
+ * poller picks it up when a label asks for a task. Not idempotent: call it in a step of its own.
+ */
+export async function createTicket(ticket: NewTicket): Promise<FiledTicket> {
+  const [team, me, labelIds] = await Promise.all([teamId(), linear().viewer, Promise.all(ticket.labels.map(labelId))]);
+  const payload = await linear().createIssue({ teamId: team, assigneeId: me.id, title: ticket.title, description: ticket.description, labelIds });
+  const issue = await payload.issue;
+  if (!payload.success || !issue) throw new Error(`Linear refused the ticket "${ticket.title}"`);
+  return { id: issue.id, identifier: issue.identifier, url: issue.url };
+}
+
+/** Moves the ticket to the team's first completed state: nothing on it waits on anyone. */
+export async function closeTicket(ticketId: string): Promise<void> {
+  const states = await linear().workflowStates({ filter: { team: { key: { eq: config.linearTeam } }, type: { eq: "completed" } } });
+  const done = [...states.nodes].sort((a, b) => a.position - b.position)[0];
+  if (!done) throw new Error(`Linear team ${config.linearTeam} has no completed state`);
+  await linear().updateIssue(ticketId, { stateId: done.id });
+}
+
+export type LabelledTicket = {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+  labels: string[];
+  /** `done` and `cancelled` are Linear's completed and canceled state types; anything else is open. */
+  state: "open" | "done" | "cancelled";
+};
+
+/** Every ticket in the team with the label, whatever its state or assignee, oldest first. Up to 100. */
+export async function ticketsWithLabel(label: string): Promise<LabelledTicket[]> {
+  const data = await linear().client.request<
+    { issues: { nodes: { id: string; identifier: string; title: string; url: string; state: { type: string }; labels: { nodes: { name: string }[] } }[] } },
+    { team: string; label: string }
+  >(
+    `query($team: String!, $label: String!) {
+      issues(first: 100, orderBy: createdAt, filter: { team: { key: { eq: $team } }, labels: { some: { name: { eq: $label } } } }) {
+        nodes { id identifier title url state { type } labels { nodes { name } } }
+      }
+    }`,
+    { team: config.linearTeam, label },
+  );
+  return data.issues.nodes
+    .map((i) => ({
+      id: i.id,
+      identifier: i.identifier,
+      title: i.title,
+      url: i.url,
+      labels: i.labels.nodes.map((l) => l.name),
+      state: i.state.type === "completed" ? ("done" as const) : i.state.type === "canceled" ? ("cancelled" as const) : ("open" as const),
+    }))
+    .reverse();
+}
+
 /** Uploads a file to Linear's storage and returns its asset URL (opens for workspace members). */
 export async function uploadFile(data: Buffer, filename: string, contentType: string): Promise<string> {
   const payload = await linear().fileUpload(contentType, filename, data.length);

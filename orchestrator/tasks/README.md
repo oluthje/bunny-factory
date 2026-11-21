@@ -19,9 +19,11 @@ tasks/
 The engine that runs every task is in `src/`, and knows no task by name: the contract is the `Task` type in `src/task.ts`. Skills and Claude Code's settings are in [../runner-files/](../runner-files/README.md).
 
 
-Runs start only from a ticket's `oscar-factory:<task>` label, and every run ends by moving the ticket's labels on. Each task decides what comes next (its `conclude` sets `next`: a task, `human` to wait on Oscar, or `done`), and `src/transitions.ts` moves the labels, holding back any run that didn't succeed. A task's `prepare` can also end the run before any runner, with a `Stop`.
+Runs start only from a ticket's `oscar-factory:<task>` label, and every run ends by moving the ticket's labels on. A task with a `clock` doesn't change that: on its cron the factory files a ticket with the task's label (`src/functions/clock.ts`), and the poller starts the run. Each task decides what comes next (its `conclude` sets `next`: a task, `human` to wait on Oscar, or `done`), and `src/transitions.ts` moves the labels, holding back any run that didn't succeed. A task's `prepare` can also end the run before any runner, with a `Stop`.
 
 The chain: `explore` (easy call) → `implement` (pushed commits) → `review` (posted on a PR) → `merge` (merged: done).
+
+The deepen tasks sit before it: `deepen-scan` (files a ticket per strong candidate) → `deepen-refute` on each (a verdict, then waits on Oscar). Oscar grills through a candidate with `/factory-deepen-grill` and hands its ticket to `implement`, or cancels it.
 
 ### `implement`
 
@@ -148,6 +150,64 @@ explore/extract.md           not called by the agent: the factory resumes the se
                                    once the cards carry what Oscar must answer, or on an easy call.
 ```
 
+### `deepen-scan`
+
+Starts from: the `oscar-factory:deepen-scan` label, on a ticket the factory files itself, titled `Deepen scan: <date> <time>` in `FACTORY_TZ` (California by default). Two triggers file it (`ticket.ts`):
+- **the clock**, on `FACTORY_DEEPEN_SCAN_CRON`, a five-field cron in that time zone (`0 7 * * 1,4` is Mondays and Thursdays at 07:00). Unset, the clock is off. It files nothing while 3 or more candidates wait undecided: open, and queued for `deepen-refute`, being refuted, or waiting on Oscar.
+- **`fac deepen [direction]`**, which always files one, with the direction to look in as the ticket's description.
+
+Ends with: a candidates file and an HTML report, and no commits. The factory files one ticket for each of the first 3 `Strong` candidates, titled `Deepen: <candidate>`, with the candidate's section as its description and the labels `oscar-factory:candidate` and `oscar-factory:deepen-refute`. It posts the list on the scan's ticket with the report linked as a file and every candidate folded below, then closes the scan's ticket as Done. A run that timed out, or whose candidates couldn't be read, files no ticket and leaves the scan's ticket waiting on Oscar.
+
+Before any runner, `prepare` gathers every ticket with the `oscar-factory:candidate` label: its state, what its latest `deepen-refute` conclusion recommends, and Oscar's last comment where he cancelled it. The prompt carries them so the scan proposes only what is new.
+
+It works on `origin/main` only (`branch: "none"`), across every repo, with no stack and no browser, and 40 minutes.
+
+```
+deepen-scan/prompt.md        the ticket's description as the direction, and the earlier candidates
+├── 1. factory-rules
+├── 2. improve-codebase-architecture   read by path (`disable-model-invocation`); its step 1 only: explore
+│   │                                  from the direction or the commit history's hot spots, proposing
+│   │                                  only what is new
+│   └── codebase-design                its vocabulary
+├── 3. the candidates file             one section per candidate, strongest first: Strength / Repos / Files /
+│                                      Problem / Solution / Benefits; then Decisions (and Gaps)
+├── 4. the skill's step 2              the HTML report, from the candidates as written; the skill's step 3,
+│                                      the grilling, is Oscar's (`/factory-deepen-grill`)
+└── Finish line                        candidates and report written, no commits, clean git status
+
+deepen-scan/extract.md       not called by the agent: the factory resumes the session with it under
+                                   `claude --json-schema` for `{ candidates: [{ title, strength, summary,
+                                   body }] }`, checked again with the same zod schema (`candidates.ts`), which
+                                   also wants a body for every Strong candidate, retried up to 2 times.
+```
+
+### `deepen-refute`
+
+Starts from: the `oscar-factory:deepen-refute` label, which a `deepen-scan` run sets on each candidate's ticket, or Oscar does to have it refuted again after commenting.
+
+Ends with: a conclusion and an HTML report, and no commits. The factory posts the conclusion on the ticket as a comment tagged `deepen-refute conclusion`: the verdict (`do it`, `don't` or `not yet`), the report linked as a file, a summary of at most five lines, and the full conclusion folded. Whatever the verdict, the ticket then waits on Oscar: no verdict queues `implement`.
+
+A run on a candidate refuted before gets the last conclusion and Oscar's comments, and checks each point he makes against the code. It works on `origin/main` only (`branch: "none"`), with no stack and no browser, and 20 minutes.
+
+```
+deepen-refute/prompt.md      the candidate (the ticket's description), the last conclusion and Oscar's comments
+├── 1. factory-rules
+├── 2. codebase-design              the vocabulary the candidate is written in
+├── 3. deepen-refute/method.md      check every claim; the eight attacks (deletion test, hypothetical seam,
+│                                   churn, callers, tests, door, cheaper alternative, hidden reason); the
+│                                   case for; the cost in counts; the verdict
+├── 4. the conclusion               fixed headings: Verdict / Claims / For / Against / Cost / Decisions (and Gaps)
+├── 5. the report                   one minimal HTML page, on the scaffold in improve-codebase-architecture's
+│                                   HTML-REPORT.md, read by path: the verdict, the candidate with one
+│                                   before/after diagram, For and Against side by side, the Cost
+└── Finish line                     conclusion and report written and agreeing, no commits, clean git status
+
+deepen-refute/extract.md     not called by the agent: the factory resumes the session with it under
+                                   `claude --json-schema` for `{ verdict, summary, condition }`, checked
+                                   again with the same zod schema (`conclusion.ts`), which also wants a
+                                   condition with `not-yet`, retried up to 2 times.
+```
+
 An `implement` run that creates gets Oscar's ticket comments, which refine the ticket, and the latest findings if there are any, as context, not the spec. Comments after the findings answer their open questions. An update's feedback skips them, as it skips every factory comment.
 
 ## Adding a task
@@ -155,5 +215,6 @@ An `implement` run that creates gets Oscar's ticket comments, which refine the t
 1. Add `tasks/<task>/` with `prompt.md`, `extract.md` if it has a structured pass, `prompt.ts` for its placeholders, and `index.ts` exporting its `Task`.
 2. Add it to `TaskName` and `TASKS` in `tasks/index.ts`.
 3. Add its Linear label, `oscar-factory:<task>`, and its tree above.
+4. Give it `clock: null`, unless a clock should file its tickets: then a `Clock` with its cron and the ticket to file (see `deepen-scan`).
 
 If it needs something the engine doesn't offer yet, add a hook to `Task` that any task could use, in its own commit. `test/boundaries.test.ts` fails if `src/` imports a task's files, or if a task imports another task's `index.ts` or the registry.

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, NO_AUTO_MERGE_LABEL } from "../src/labels.ts";
+import { CANDIDATE_LABEL, HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, NO_AUTO_MERGE_LABEL } from "../src/labels.ts";
 import { promptTemplate, renderTemplate, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../src/prompt.ts";
 import { skillsFor, taskFromLabels, TASKS, type TaskName } from "../src/tasks.ts";
 
@@ -17,7 +17,7 @@ describe("taskFromLabels", () => {
   it("rejects a factory label with no known task", () => {
     expect(taskFromLabels(["oscar-factory:deploy"])).toEqual({
       ok: false,
-      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`.",
+      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:deepen-scan`, `oscar-factory:deepen-refute`.",
     });
   });
 
@@ -40,6 +40,12 @@ describe("taskFromLabels", () => {
     expect(NO_AUTO_MERGE_LABEL).toBe("oscar-factory:no-auto-merge");
     expect(taskFromLabels(["oscar-factory:review", NO_AUTO_MERGE_LABEL])).toEqual({ ok: true, task: "review" });
     expect(taskFromLabels([NO_AUTO_MERGE_LABEL])).toEqual({ ok: false, reason: null });
+  });
+
+  it("ignores the candidate flag, which the factory leaves on a candidate's ticket for good", () => {
+    expect(taskFromLabels(["oscar-factory:deepen-refute", CANDIDATE_LABEL])).toEqual({ ok: true, task: "deepen-refute" });
+    expect(taskFromLabels(["oscar-factory:implement", CANDIDATE_LABEL])).toEqual({ ok: true, task: "implement" });
+    expect(taskFromLabels([CANDIDATE_LABEL])).toEqual({ ok: false, reason: null });
   });
 
   it("ignores tickets with no factory label", () => {
@@ -72,6 +78,14 @@ describe("TASKS", () => {
   it("gives merge only the rules and its rubric: no browser, no stack, the branch read-only, and 10 minutes", () => {
     expect(TASKS.merge).toMatchObject({ browser: false, stack: false, branch: "read", timeLimitMinutes: 10, docs: ["rubric.md"] });
     expect(skillsFor("merge")).toEqual(["factory-rules"]);
+  });
+
+  it("gives both deepen tasks origin/main only, no stack and no browser, and only the scan a clock", () => {
+    expect(TASKS["deepen-scan"]).toMatchObject({ browser: false, stack: false, branch: "none", timeLimitMinutes: 40, docs: [] });
+    expect(TASKS["deepen-scan"].clock).not.toBeNull();
+    expect(skillsFor("deepen-scan")).toEqual(["factory-rules", "improve-codebase-architecture", "codebase-design"]);
+    expect(TASKS["deepen-refute"]).toMatchObject({ browser: false, stack: false, branch: "none", timeLimitMinutes: 20, docs: ["method.md"], clock: null });
+    expect(skillsFor("deepen-refute")).toEqual(["factory-rules", "codebase-design", "improve-codebase-architecture"]);
   });
 
   it("gives explore the browser, the stack, origin/main only, and 20 minutes", () => {

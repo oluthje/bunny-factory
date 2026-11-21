@@ -24,6 +24,7 @@ import { finished, nextTask, requeued, type RunEnd } from "./transitions.ts";
  *   `required` that never pushes, so whatever the agent commits stays on the runner; `none` never
  *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
+ * - `clock`: the task's clock trigger, or null when only a label starts it.
  * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs, or
  *   a `Stop` to end the run there, with no runner.
  */
@@ -34,7 +35,20 @@ export type Task = {
   stack: boolean;
   branch: "optional" | "required" | "read" | "none";
   timeLimitMinutes: number | null;
+  clock: Clock | null;
   prepare: (ctx: RunContext) => Promise<Prepared | Stop>;
+};
+
+/**
+ * A clock trigger. On `cron` the engine (functions/clock.ts) asks the task for a ticket, files it
+ * with the task's label, and the poller starts the run like any other: a clock never starts a
+ * run itself.
+ * - `cron`: five fields, in `config.timeZone`; null turns the clock off.
+ * - `ticket`: the ticket to file now, or `skip` with the reason this firing files none (a throttle).
+ */
+export type Clock = {
+  cron: string | null;
+  ticket: (now: Date) => Promise<{ title: string; description: string } | { skip: string }>;
 };
 
 /**

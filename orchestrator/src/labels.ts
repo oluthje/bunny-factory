@@ -1,5 +1,5 @@
 // The ticket's factory labels: `oscar-factory:<task>` queues a run of the task, two status labels
-// say where the ticket stands, and flag labels, set only by Oscar, change how a task behaves.
+// say where the ticket stands, and flag labels change how a task behaves and queue nothing.
 // Pure: no I/O. How labels move is in transitions.ts.
 import type { TaskName } from "../tasks/index.ts";
 
@@ -13,7 +13,12 @@ export const STATUS_LABELS: readonly string[] = [IN_PROGRESS_LABEL, HUMAN_NEEDED
 
 /** Set by Oscar: the factory never merges the ticket's PRs. A flag, not a task: it queues nothing. */
 export const NO_AUTO_MERGE_LABEL = `${LABEL_PREFIX}no-auto-merge`;
-export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL];
+/**
+ * Set by the factory when it files a ticket for a candidate, and never taken off: how later runs
+ * find every candidate proposed so far. A flag, not a task: it queues nothing.
+ */
+export const CANDIDATE_LABEL = `${LABEL_PREFIX}candidate`;
+export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL];
 
 /** The label that queues a run of the task. */
 export function taskLabel(task: TaskName): string {

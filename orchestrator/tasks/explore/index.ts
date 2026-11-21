@@ -18,6 +18,7 @@ export const explore: Task = {
   stack: true,
   branch: "none",
   timeLimitMinutes: 20,
+  clock: null,
   prepare,
 };
 
