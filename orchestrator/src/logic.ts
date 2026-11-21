@@ -54,6 +54,22 @@ export function cursorAfterPoll(prev: string | null, issues: Ticket[], waiting: 
   return advanceCursor(prev, waiting ? issues.filter((t) => t.updatedAt < waiting.updatedAt) : issues);
 }
 
+/** A ticket on the other end of a "blocks" relation, with its state as Linear's state type says. */
+export type Linked = { identifier: string; state: "open" | "done" | "cancelled" };
+
+/** The blockers still open: a ticket with any waits, and the poller starts no run on it. */
+export function blockedBy(blockers: readonly Linked[]): string[] {
+  return blockers.filter((b) => b.state === "open").map((b) => b.identifier);
+}
+
+/**
+ * Of the tickets a just-closed ticket blocks, those it set free: still open, and every blocker
+ * closed. Each gets a comment, which brings it back to the poller.
+ */
+export function nowUnblocked(dependents: readonly (Linked & { id: string; blockers: readonly Linked[] })[]): { id: string; identifier: string }[] {
+  return dependents.filter((d) => d.state === "open" && blockedBy(d.blockers).length === 0).map(({ id, identifier }) => ({ id, identifier }));
+}
+
 export type RunDecision<T> = { ticket: Ticket; task: T; outcome: "started" | "waiting" | "capped" };
 
 /**

@@ -28,10 +28,11 @@ export const review: Task = {
   branch: "required",
   timeLimitMinutes: null,
   clock: null,
+  onBulkParent: false,
   prepare,
 };
 
-async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {
+async function prepare({ step, runId, ticket, branch, base, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {
   // The task's `branch: "required"` means at least one repo has it.
   const repos = Object.keys(heads) as [string, ...string[]];
   const openUrls = Object.values(openPrs);
@@ -69,7 +70,7 @@ async function prepare({ step, runId, ticket, branch, timeLimitMinutes, heads, o
         const body = reviewComment(ticket, text, runId);
         for (const [repo, url] of Object.entries(openPrs)) {
           // The hunks GitHub shows on the PR, from the host's mirror, which the push updated.
-          const split = placeComments(comments, repo, diffLines(await branchDiff(repo, branch)));
+          const split = placeComments(comments, repo, diffLines(await branchDiff(repo, branch, base)));
           for (const c of split.dropped) console.warn(`[${runId}] dropping comment on ${repo}/${c.path}:${c.line}: not in the diff`);
           const inline = split.placed.map((c) => ({ ...c, body: markForGithub(c.body) }));
           await postReview(url, newHeads[repo]!, body, inline);

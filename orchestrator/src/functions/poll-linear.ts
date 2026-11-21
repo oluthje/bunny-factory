@@ -1,7 +1,7 @@
 import { config } from "../config.ts";
 import { countRuns, getCursor, getFactoryState, recordPoll, recordRun, runsInFlight, setCursor, ticketRunInFlight } from "../db/index.ts";
-import { applyLabels, comment, fetchOptedInTickets } from "../linear.ts";
-import { cursorAfterPoll, decideRuns, linearComment, mayStartRuns, selectNewTickets } from "../logic.ts";
+import { applyLabels, comment, fetchOptedInTickets, ticketBlockers } from "../linear.ts";
+import { blockedBy, cursorAfterPoll, decideRuns, linearComment, mayStartRuns, selectNewTickets } from "../logic.ts";
 import { inngest, RUN_REQUESTED } from "../inngest.ts";
 import { taskFromLabels } from "../tasks.ts";
 import { LOOP_CAP, pickedUp, refused } from "../transitions.ts";
@@ -20,6 +20,9 @@ const CURSOR = "linear.updatedAt";
  *   cursor stops short of the first of them, so a later poll fetches them again. Inngest can't hold
  *   runs apart (see runTicket).
  * - Past the loop cap the task isn't started, and the ticket waits on Oscar.
+ * - A ticket with an open blocker (a "blocked by" relation to a ticket neither done nor cancelled)
+ *   isn't started, and the cursor passes it: the comment its last blocker's merge posts when it
+ *   frees the ticket (the merge task's unblock step) brings it back.
  * - Only a machine with FACTORY_POLL=on, while the factory is running (`fac start` / `stop`),
  *   polls at all. Otherwise it fetches nothing and leaves the cursor, so the next poll that may
  *   start runs fetches every ticket that changed meanwhile.
@@ -42,7 +45,22 @@ export const pollLinear = inngest.createFunction(
     const skipped = choices.flatMap(({ ticket, choice }) =>
       !choice.ok && choice.reason ? [`${ticket.identifier}: ${choice.reason}`] : [],
     );
-    const runnable = choices.flatMap(({ ticket, choice }) => (choice.ok ? [{ ticket, task: choice.task }] : []));
+    const labelled = choices.flatMap(({ ticket, choice }) => (choice.ok ? [{ ticket, task: choice.task }] : []));
+
+    // Blocked tickets wait for their blockers, reported here and not on the ticket.
+    const blocked = await step.run("check-blockers", async () => {
+      const open: Record<string, string[]> = {};
+      for (const { ticket } of labelled) {
+        const by = blockedBy(await ticketBlockers(ticket.id));
+        if (by.length) open[ticket.id] = by;
+      }
+      return open;
+    });
+    for (const { ticket } of labelled) {
+      const by = blocked[ticket.id];
+      if (by) skipped.push(`${ticket.identifier}: blocked by ${by.join(", ")}.`);
+    }
+    const runnable = labelled.filter(({ ticket }) => !blocked[ticket.id]);
 
     // Oldest first: once the free slots are taken, every later ticket waits.
     const decided = await step.run("record-runs", () => {

@@ -12,11 +12,12 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.ts";
 import { closeIfOpen, getFactoryState, runStatus, updateRun } from "../db/index.ts";
+import { bulkBranch, placeRun } from "../bulk.ts";
 import { bundleForRun, importAndPush } from "../git.ts";
-import { commitIdentity, findOpenPr } from "../github.ts";
+import { branchesOnGitHub, commitIdentity, findOpenPr } from "../github.ts";
 import { RunHeartbeat } from "../heartbeat.ts";
 import { inngest, RUN_REQUESTED, RUN_STOP } from "../inngest.ts";
-import { applyLabels } from "../linear.ts";
+import { applyLabels, ticketParent } from "../linear.ts";
 import { mayStartRuns, parseChangedRepos, sandboxName, shQuote, type Ticket } from "../logic.ts";
 import { buildPrompt, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../prompt.ts";
 import { ARTIFACTS, EVIDENCE_DIR, HOME, RUN_DIR } from "../runner-paths.ts";
@@ -101,14 +102,28 @@ export const runTicket = inngest.createFunction(
   },
   async ({ event, step }) => {
     const { runId, ticket, task } = event.data as RunRequested;
-    const branch = ticket.branchName;
     const settings = TASKS[task];
     const timeLimitMinutes = settings.timeLimitMinutes ?? config.claudeTimeoutMinutes;
     const localDir = runDirFor(runId);
     let sandboxId: string | null = null;
 
     try {
-      // 1. Bundles of an up-to-date main, built from the orchestrator's mirrors, plus the ticket's branch
+      // 0. Where the run works: its base (main, or the parent's bulk branch) and its branch (the
+      // ticket's own, or a bulk parent's bulk branch). See src/bulk.ts.
+      const placement = await step.run("place-run", async () => {
+        const parent = await ticketParent(ticket.id);
+        const existing = await branchesOnGitHub([bulkBranch(ticket.identifier), ...(parent ? [bulkBranch(parent.identifier)] : [])]);
+        return placeRun({ ticket, parent, bulkBranchExists: (name) => existing.includes(name) });
+      });
+      const { base, branch } = placement;
+      if (placement.bulkParent && !settings.onBulkParent) {
+        const allowed = (Object.keys(TASKS) as TaskName[]).filter((t) => TASKS[t].onBulkParent).map((t) => `\`${t}\``).join(", ");
+        const text = `Not running \`${task}\`: ${ticket.identifier} is a bulk parent, a container for its sub-tickets. Only ${allowed} runs on it, to fix the PR from \`${branch}\` into \`${base}\`.`;
+        await step.run("stop-on-bulk-parent", () => finish({ runId, ticketId: ticket.id, end: { status: "failed", next: "human" }, text, record: {} }));
+        return { status: "failed" as const, prUrls: [], baseShas: {} };
+      }
+
+      // 1. Bundles of an up-to-date base, built from the orchestrator's mirrors, plus the ticket's branch
       // from every repo that has it on GitHub, unless the task never touches it.
       const usesBranch = settings.branch !== "none";
       // Only a task that builds on the branch pushes: `read` checks it out, and anything committed stays on the runner.
@@ -117,8 +132,9 @@ export const runTicket = inngest.createFunction(
         const shas: Record<string, string> = {};
         const found: Record<string, string> = {};
         for (const repo of config.repos) {
-          const { base, head } = await bundleForRun(repo, path.join(localDir, "in", `${repo}.bundle`), usesBranch ? branch : null);
-          shas[repo] = base;
+          const bundled = await bundleForRun(repo, path.join(localDir, "in", `${repo}.bundle`), base, usesBranch ? branch : null);
+          shas[repo] = bundled.base;
+          const head = bundled.head;
           if (head) found[repo] = head;
         }
         return { baseShas: shas, heads: found };
@@ -140,7 +156,7 @@ export const runTicket = inngest.createFunction(
 
       // 1b. The task's own inputs, gathered before the sandbox exists. The task may end the run
       // here instead, when there is nothing for an agent to do.
-      const prepared = await settings.prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes, heads, openPrs });
+      const prepared = await settings.prepare({ step, runId, ticket, branch, base, localDir, timeLimitMinutes, heads, openPrs });
       if ("stop" in prepared) {
         const { end, text, record } = prepared.stop;
         await step.run("stop-before-runner", () => finish({ runId, ticketId: ticket.id, end, text, record: record ?? {} }));
@@ -171,8 +187,8 @@ export const runTicket = inngest.createFunction(
       const id = sandboxId;
 
       // 3. Bundles, Claude's settings, the task's skills, prompt, docs and MCP config in. Each repo checks the branch out
-      // from its own bundle where it's on GitHub, and from the new main elsewhere. A task that never
-      // touches the branch gets a detached `origin/main`, so a commit has nowhere to go.
+      // from its own bundle where it's on GitHub, and from the new base elsewhere. A task that never
+      // touches the branch gets a detached `origin/<base>`, so a commit has nowhere to go.
       await step.run("upload-and-checkout", async () => {
         const sb = await getSandbox(id);
         for (const repo of config.repos) {
@@ -182,7 +198,7 @@ export const runTicket = inngest.createFunction(
         await packSkills(task, skillsTgz);
         await upload(sb, skillsTgz, `${RUN_DIR}/skills.tgz`);
         await upload(sb, SETTINGS_FILE, `${HOME}/.claude/settings.json`);
-        const prompt = buildPrompt({ task, ticket, timeLimitMinutes, vars: prepared.vars });
+        const prompt = buildPrompt({ task, ticket, branch, base, timeLimitMinutes, vars: prepared.vars });
         fs.writeFileSync(path.join(localDir, "prompt.md"), prompt);
         await upload(sb, Buffer.from(prompt), `${RUN_DIR}/prompt.md`);
         for (const doc of settings.docs) await upload(sb, path.join(TASKS_DIR, task, doc), `${RUN_DIR}/${doc}`);
@@ -200,8 +216,8 @@ export const runTicket = inngest.createFunction(
            rm -rf ~/.claude/skills && mkdir -p ~/.claude/skills && tar xzf ${RUN_DIR}/skills.tgz -C ~/.claude/skills
            for r in ${repos}; do
              cd ~/bunny/$r
-             git fetch -q --no-tags ${RUN_DIR}/in/$r.bundle +refs/heads/${config.baseBranch}:refs/remotes/origin/${config.baseBranch}
-             start=origin/${config.baseBranch}
+             git fetch -q --no-tags ${RUN_DIR}/in/$r.bundle +refs/heads/${shQuote(base)}:refs/remotes/origin/${shQuote(base)}
+             start=origin/${shQuote(base)}
              if [[ ${shQuote(withBranch)} == *" $r "* ]]; then
                git fetch -q --no-tags ${RUN_DIR}/in/$r.bundle +refs/heads/${shQuote(branch)}:refs/remotes/origin/${shQuote(branch)}
                start=origin/${shQuote(branch)}
@@ -329,7 +345,7 @@ export const runTicket = inngest.createFunction(
       const passError = runPass ? await structuredPass(pass) : null;
 
       // 7. Artifacts out, the task's files, plus a bundle per repo with new commits: since the
-      // branch's head on GitHub, or since main where it isn't there yet; none for a task that never
+      // branch's head on GitHub, or since the base where it isn't there yet; none for a task that never
       // pushes. Happens on success, failure and timeout.
       const changed = await step.run("collect", async () => {
         const sb = await getSandbox(id);
@@ -339,10 +355,10 @@ export const runTicket = inngest.createFunction(
            for r in ${config.repos.join(" ")}; do
              cd ~/bunny/$r
              git status --short > ${ARTIFACTS}/git-status-$r.txt
-             start=origin/${config.baseBranch}
+             start=origin/${shQuote(base)}
              git rev-parse -q --verify refs/remotes/origin/${shQuote(branch)} >/dev/null && start=origin/${shQuote(branch)}
              n=${pushes ? `$(git rev-list --count "$start"..${shQuote(branch)})` : "0"}
-             [ "$n" -gt 0 ] && git bundle create -q ${RUN_DIR}/out/$r.bundle origin/${config.baseBranch}..${shQuote(branch)} 2>/dev/null
+             [ "$n" -gt 0 ] && git bundle create -q ${RUN_DIR}/out/$r.bundle origin/${shQuote(base)}..${shQuote(branch)} 2>/dev/null
              echo "$r $n"
            done
            tar czf ${RUN_DIR}/artifacts.tgz -C ~ artifacts .claude/projects bunny/.stack/logs 2>/dev/null; true`,

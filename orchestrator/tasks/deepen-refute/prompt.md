@@ -10,7 +10,7 @@ This is a factory run of the `deepen-refute` task. The ticket below is a **candi
 
 ## Run values
 
-- Every repo is under `~/bunny`, at `origin/main`, detached. Nothing you commit leaves the runner.
+- Every repo is under `~/bunny`, at `origin/{{base}}`, detached. Nothing you commit leaves the runner.
 - Conclusion path: `{{conclusionPath}}`
 - Report path: `{{reportPath}}`
 - Time limit: {{timeLimitMinutes}} minutes. The Bunny stack isn't running: you read code and history, and may run a single spec file where a claim about tests turns on it.

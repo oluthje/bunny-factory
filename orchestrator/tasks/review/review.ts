@@ -48,7 +48,7 @@ export function reviewExtractionSchema(repos: readonly [string, ...string[]]) {
               .int()
               .positive()
               .describe(
-                "A line in the file as it is on the reviewed branch, inside a hunk of the diff against origin/main. A comment outside the hunks is dropped.",
+                "A line in the file as it is on the reviewed branch, inside a hunk of the diff against the base the review started from. A comment outside the hunks is dropped.",
               ),
             body: z
               .string()

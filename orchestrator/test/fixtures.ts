@@ -19,7 +19,7 @@ export const ticket = (over: Partial<Ticket> = {}): Ticket => ({
 
 /** The task's prompt for the sample ticket, with the task's own placeholders from `vars`. */
 export const renderPrompt = (task: TaskName, vars: Record<string, string>) =>
-  buildPrompt({ task, ticket: ticket(), timeLimitMinutes: 60, vars });
+  buildPrompt({ task, ticket: ticket(), branch: ticket().branchName, base: "main", timeLimitMinutes: 60, vars });
 
 /** Ticket comments: Oscar's own, a findings comment, and another factory comment (the factory posts as Oscar). */
 export const oscar = (body: string, createdAt: string): TicketComment => ({ body, createdAt, isMe: true });

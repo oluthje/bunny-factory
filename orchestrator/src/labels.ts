@@ -18,7 +18,13 @@ export const NO_AUTO_MERGE_LABEL = `${LABEL_PREFIX}no-auto-merge`;
  * find every candidate proposed so far. A flag, not a task: it queues nothing.
  */
 export const CANDIDATE_LABEL = `${LABEL_PREFIX}candidate`;
-export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL];
+/**
+ * Set by Oscar on a parent ticket: its sub-tickets' PRs merge into the parent's bulk branch, with no
+ * per-PR human review, and Oscar reviews the batch as one PR into main (src/bulk.ts). A flag, not
+ * a task: it queues nothing.
+ */
+export const BULK_LABEL = `${LABEL_PREFIX}bulk`;
+export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL, BULK_LABEL];
 
 /** The label that queues a run of the task. */
 export function taskLabel(task: TaskName): string {

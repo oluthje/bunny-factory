@@ -74,6 +74,10 @@ A limit on how often a trigger fires (one bug report in ten, a clock once a day)
 **Merge check**:
 The merge task's gate before any merge: an agent judges whether each of the ticket's PRs is an easy call, then the orchestrator's own checks (CI green, mergeable, not into production, unchanged since judged) must pass too. All of a ticket's PRs merge, or none.
 
+**Bulk branch**:
+A parent ticket's `factory/bulk/<parent>` branch, opted in with `oscar-factory:bulk`. Its sub-tickets' PRs merge into it with no per-PR human review, no agent judgement and no CI; Oscar reviews the batch as one PR into main. It trades per-PR human review for one human review of the batch.
+_Avoid_: integration branch, batch branch
+
 **Dry run**:
 The factory doing everything a merge needs except merging, and saying what it would merge. On until `FACTORY_MERGE_DRY_RUN` is `false`.
 
