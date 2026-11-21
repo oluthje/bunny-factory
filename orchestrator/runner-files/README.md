@@ -26,7 +26,7 @@ Permissions stay on the command line (`--dangerously-skip-permissions` in `src/f
 | Skill | What it is | Tasks |
 |---|---|---|
 | `factory-rules` | The rules every run follows: headless decisions, time budget, fixed point, gaps | all |
-| `factory-stack` | Reference for the Bunny stack in the runner: repos, services, specs, login, known gaps | `implement`, `review`, `explore` |
+| `factory-stack` | Reference for the Bunny stack in the runner: repos, services, specs, login, known gaps | `implement`, `review`, `explore`, `resolve` |
 | `factory-evidence` | Before-and-after screenshots or videos for a visual change | `implement` |
 | `implement`, `tdd`, `codebase-design` | Matt Pocock's skills, copied from `~/development/.claude/skills` on 2026-11-18 | `implement`; `codebase-design` also `deepen-scan`, `deepen-refute` |
 | `code-review` | Matt Pocock's, same copy | `implement`, `review` |

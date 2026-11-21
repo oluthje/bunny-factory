@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CiState } from "../../src/checks.ts";
 import type { PrState } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
-import { blockers, bulkBlockers, type PrCheck } from "./gates.ts";
+import { blockers, bulkBlockers, RESOLVE_ROUNDS, resolveRound, stale, type PrCheck } from "./gates.ts";
 
 const green: CiState = { state: "green", failing: [], pending: [], checks: 3 };
 const state = (over: Partial<PrState> = {}): PrState => ({
@@ -46,16 +46,19 @@ describe("blockers", () => {
     expect(check([pr({ headSha: "def" })])).toEqual(["app: has commits pushed after the merge run judged it."]);
   });
 
-  it("holds back a draft, a closed PR, a conflict, and a PR GitHub can't yet place", () => {
+  it("holds back a draft, a closed PR, and a PR GitHub can't yet place", () => {
     expect(check([pr({ draft: true, mergeableState: "draft" })])).toEqual(["app: is a draft."]);
     expect(check([pr({ open: false })])).toEqual(["app: is no longer open."]);
-    expect(check([pr({ mergeable: false, mergeableState: "dirty" })])).toEqual(["app: conflicts with its base."]);
     expect(check([pr({ mergeable: null, mergeableState: "unknown" })])).toEqual(["app: GitHub hasn't worked out whether it can merge."]);
   });
 
-  it("holds back a PR that branch protection blocks or wants brought up to date", () => {
+  it("holds back a PR that branch protection blocks", () => {
     expect(check([pr({ mergeableState: "blocked" })])).toEqual(["app: branch protection blocks it."]);
-    expect(check([pr({ mergeableState: "behind" })])).toEqual(["app: is behind its base, and branch protection wants it up to date."]);
+  });
+
+  it("leaves a conflict, or a branch behind its base, to resolve rather than block on it", () => {
+    expect(check([pr({ mergeable: false, mergeableState: "dirty" })])).toEqual([]);
+    expect(check([pr({ mergeableState: "behind" })])).toEqual([]);
   });
 
   it("holds back red or unfinished CI, naming the checks", () => {
@@ -99,10 +102,36 @@ describe("bulkBlockers", () => {
     expect(checkBulk([bulkPr({ base: "production" })], ["Bug"], "production")).toEqual(["`production` isn't a bulk branch."]);
   });
 
-  it("still holds back a draft, a conflict, a closed PR and unjudged commits", () => {
+  it("still holds back a draft, a closed PR and unjudged commits, but not a conflict", () => {
     expect(checkBulk([bulkPr({ draft: true })])).toEqual(["app: is a draft."]);
-    expect(checkBulk([bulkPr({ mergeable: false, mergeableState: "dirty" })])).toEqual(["app: conflicts with its base."]);
+    expect(checkBulk([bulkPr({ mergeable: false, mergeableState: "dirty" })])).toEqual([]);
     expect(checkBulk([bulkPr({ open: false })])).toEqual(["app: is no longer open."]);
     expect(checkBulk([bulkPr({ headSha: "def" })])).toEqual(["app: has commits pushed after the merge run judged it."]);
+  });
+});
+
+describe("stale", () => {
+  const prOf = (over: Partial<PrState> = {}) => ({ repo: over.repo ?? "app", state: state(over) });
+
+  it("lists each open PR that conflicts with its base or is behind it", () => {
+    expect(stale([prOf({ mergeable: false, mergeableState: "dirty" }), prOf({ repo: "api", mergeableState: "behind" })])).toEqual([
+      "app: conflicts with its base.",
+      "api: is behind its base, and branch protection wants it up to date.",
+    ]);
+  });
+
+  it("leaves out a clean PR, one GitHub can't yet place, and a closed one", () => {
+    expect(stale([prOf(), prOf({ mergeable: null, mergeableState: "unknown" }), prOf({ open: false, mergeable: false, mergeableState: "dirty" })])).toEqual([]);
+  });
+});
+
+describe("resolveRound", () => {
+  it("hands stale PRs to resolve, counting the rounds", () => {
+    expect(resolveRound(0)).toEqual({ next: "resolve", round: 1 });
+    expect(resolveRound(RESOLVE_ROUNDS - 1)).toEqual({ next: "resolve", round: RESOLVE_ROUNDS });
+  });
+
+  it("hands them to Oscar once the rounds since the last implement run are used up", () => {
+    expect(resolveRound(RESOLVE_ROUNDS)).toEqual({ next: "human", rounds: RESOLVE_ROUNDS });
   });
 });

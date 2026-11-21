@@ -17,7 +17,7 @@ describe("taskFromLabels", () => {
   it("rejects a factory label with no known task", () => {
     expect(taskFromLabels(["oscar-factory:deploy"])).toEqual({
       ok: false,
-      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:deepen-scan`, `oscar-factory:deepen-refute`.",
+      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:deepen-scan`, `oscar-factory:deepen-refute`, `oscar-factory:resolve`.",
     });
   });
 
@@ -67,6 +67,11 @@ describe("skillsFor", () => {
 });
 
 describe("TASKS", () => {
+  it("gives resolve the stack for specs, no browser, the branch on GitHub, and 30 minutes", () => {
+    expect(TASKS.resolve).toMatchObject({ browser: false, stack: true, branch: "required", timeLimitMinutes: 30, onBulkParent: true });
+    expect(skillsFor("resolve")).toEqual(["factory-rules", "factory-stack"]);
+  });
+
   it("gives implement the browser and the stack, and lets it create or update the branch", () => {
     expect(TASKS.implement).toMatchObject({ browser: true, stack: true, branch: "optional" });
   });
@@ -134,8 +139,9 @@ describe("runner files", () => {
     }
   });
 
-  it("has an extract prompt for every task, for its structured pass", () => {
-    for (const task of tasks) expect(fs.existsSync(path.join(TASKS_DIR, task, "extract.md")), task).toBe(true);
+  it("has an extract prompt for every task with a structured pass", () => {
+    // resolve has no pass: its resolution is posted as written.
+    for (const task of tasks.filter((t) => t !== "resolve")) expect(fs.existsSync(path.join(TASKS_DIR, task, "extract.md")), task).toBe(true);
   });
 
   it("has Claude Code settings that parse, with every env value a string", () => {

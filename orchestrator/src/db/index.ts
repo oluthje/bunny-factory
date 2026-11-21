@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { and, count, desc, eq, inArray, isNotNull, max, ne } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, max, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { config } from "../config.ts";
@@ -49,6 +49,20 @@ export function countRuns(ticketId: string, task: string): number {
   return (
     db.select({ n: count() }).from(runs)
       .where(and(eq(runs.ticketId, ticketId), eq(runs.task, task), ne(runs.status, "cancelled")))
+      .get()?.n ?? 0
+  );
+}
+
+/**
+ * How many runs of `task` the ticket has had since its latest run of `since` started (all of them,
+ * when it has had none), for a cap that a task resets: three rounds of one task per round of another.
+ * A cancelled run doesn't count, as in `countRuns`.
+ */
+export function countRunsSince(ticketId: string, task: string, since: string): number {
+  const from = db.select({ at: max(runs.createdAt) }).from(runs).where(and(eq(runs.ticketId, ticketId), eq(runs.task, since))).get()?.at ?? "";
+  return (
+    db.select({ n: count() }).from(runs)
+      .where(and(eq(runs.ticketId, ticketId), eq(runs.task, task), ne(runs.status, "cancelled"), gt(runs.createdAt, from)))
       .get()?.n ?? 0
   );
 }

@@ -5,20 +5,24 @@
 // saying what it would merge. Oscar's `oscar-factory:no-auto-merge` flag stops it before any of
 // that. Into a bulk branch (src/bulk.ts) it takes `mergeIntoBulk` instead: no CI to wait for, no
 // agent, only the orchestrator's checks, then a squash merge, live whatever the dry-run setting,
-// since Oscar reviews the batch's PR into main. The tree of its prompt is in tasks/README.md.
+// since Oscar reviews the batch's PR into main. On either path, a PR that conflicts with its base,
+// or is behind it, goes to the resolve task to merge the base in, then comes back here: checked
+// before the CI wait, and again right before merging (gates.ts `stale`, `resolveRound`).
+// The tree of its prompt is in tasks/README.md.
 import { isBulkBranch } from "../../src/bulk.ts";
 import { ciState, combineCi, type CiState } from "../../src/checks.ts";
 import { config } from "../../src/config.ts";
 import { commentOnPr, commitChecks, deleteBranch, getPrBody, mergePr, type MergeMethod, prComments, prReviews, prState, reviewThreads } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
+import { countRunsSince } from "../../src/db/index.ts";
 import { blockedTickets, closeTicket, comment, ticketComments, ticketLabels } from "../../src/linear.ts";
 import { linearComment, nowUnblocked } from "../../src/logic.ts";
 import { finish, passResult, type Outcome, type Prepared, type RunContext, type Step, type Stop, type Task } from "../../src/task.ts";
 import type { RunEnd } from "../../src/transitions.ts";
-import { blockers, bulkBlockers } from "./gates.ts";
+import { blockers, bulkBlockers, resolveRound, stale } from "./gates.ts";
 import { mergeOrder } from "./order.ts";
 import { promptVars, VERDICT } from "./prompt.ts";
-import { bulkMergedText, ciStopText, mergedText, notMergingText, partialText, prNote, wouldMergeText } from "./report.ts";
+import { bulkMergedText, ciStopText, mergedText, notMergingText, partialText, prNote, staleText, wouldMergeText } from "./report.ts";
 import { holdouts, mergeVerdictJsonSchema, parseMergeVerdict, verdictRetryPrompt } from "./verdict.ts";
 
 export const merge: Task = {
@@ -46,6 +50,18 @@ const MERGE_TRIES = 3;
 
 const stop = (text: string, end: RunEnd = { status: "succeeded", next: "human" }): Stop => ({ stop: { end, text } });
 
+/** Stale PRs (gates.ts `stale`) go to resolve, or to Oscar once its rounds are used up. */
+function staleEnd(ticketId: string, staleness: readonly string[], base: string): { end: RunEnd; text: string } {
+  const next = resolveRound(countRunsSince(ticketId, "resolve", "implement"));
+  return { end: { status: "succeeded", next: next.next }, text: staleText(staleness, base, next) };
+}
+
+/** The open PRs as GitHub has them now: where any is stale, how the run ends; null when none is. */
+async function readStale(ticketId: string, openPrs: Record<string, string>, base: string): Promise<{ end: RunEnd; text: string } | null> {
+  const staleness = stale(await Promise.all(Object.entries(openPrs).map(async ([repo, url]) => ({ repo, state: await prState(url) }))));
+  return staleness.length ? staleEnd(ticketId, staleness, base) : null;
+}
+
 async function prepare({ step, runId, ticket, branch, base, heads, openPrs, timeLimitMinutes }: RunContext): Promise<Prepared | Stop> {
   if (ticket.labels.includes(NO_AUTO_MERGE_LABEL)) return stop(`Not merging: \`${NO_AUTO_MERGE_LABEL}\` is on the ticket.`);
   const repos = Object.keys(openPrs);
@@ -55,6 +71,11 @@ async function prepare({ step, runId, ticket, branch, base, heads, openPrs, time
   if (unpaired.length) return stop(`Not merging: \`${branch}\` is in ${unpaired.join(", ")} with no open PR.`);
   const prRepos = repos as [string, ...string[]];
   if (isBulkBranch(base)) return mergeIntoBulk({ step, runId, ticket, branch, base, heads, openPrs, prRepos });
+
+  // A PR that conflicts with main, or is behind it, goes to resolve before any CI wait or agent:
+  // its new head would void both.
+  const early = await step.run("check-stale", () => readStale(ticket.id, openPrs, base));
+  if (early) return { stop: early };
 
   // CI on the heads the agent will read, until it's done. Red, or still running when the wait
   // runs out, goes to Oscar without an agent.
@@ -121,18 +142,20 @@ async function prepare({ step, runId, ticket, branch, base, heads, openPrs, time
 
       // The orchestrator's own checks, on what GitHub and Linear say now, right before any merge.
       // The dry-run setting is read here too, so a replay never changes its mind.
-      const gate = await step.run("check-gates", async () => ({
-        blockers: blockers({
-          labels: await ticketLabels(ticket.id),
-          prs: await Promise.all(
-            prRepos.map(async (repo) => {
-              const state = await prState(openPrs[repo]!);
-              return { repo, state, ci: ciState(await commitChecks(repo, state.headSha)), judgedSha: heads[repo]! };
-            }),
-          ),
-        }),
-        dryRun: config.mergeDryRun,
-      }));
+      const gate = await step.run("check-gates", async () => {
+        const prs = await Promise.all(
+          prRepos.map(async (repo) => {
+            const state = await prState(openPrs[repo]!);
+            return { repo, state, ci: ciState(await commitChecks(repo, state.headSha)), judgedSha: heads[repo]! };
+          }),
+        );
+        const staleness = stale(prs);
+        return {
+          blockers: blockers({ labels: await ticketLabels(ticket.id), prs }),
+          stale: staleness.length ? staleEnd(ticket.id, staleness, base) : null,
+          dryRun: config.mergeDryRun,
+        };
+      });
 
       // On every PR, then the ticket, each its own step: a ticket report that fails and retries
       // doesn't post on the PRs again.
@@ -150,6 +173,12 @@ async function prepare({ step, runId, ticket, branch, base, heads, openPrs, time
       if (held.length || gate.blockers.length) {
         const text = notMergingText({ summary: verdict.summary, holdouts: held, blockers: gate.blockers, urls: openPrs });
         await reportOnAll(text, { status: "succeeded", next: "human" }, { prUrls: allUrls });
+        return { status: "succeeded", prUrls: allUrls };
+      }
+
+      // Cleared, but main moved under a PR meanwhile: merge it in, then judge again.
+      if (gate.stale) {
+        await reportOnAll(gate.stale.text, gate.stale.end, { prUrls: allUrls });
         return { status: "succeeded", prUrls: allUrls };
       }
 
@@ -240,19 +269,27 @@ async function mergeIntoBulk(args: {
   prRepos: string[];
 }): Promise<Stop> {
   const { step, runId, ticket, branch, base, heads, openPrs, prRepos } = args;
-  const held = await step.run("check-bulk-gates", async () =>
-    bulkBlockers({
-      base,
-      labels: await ticketLabels(ticket.id),
-      prs: await Promise.all(prRepos.map(async (repo) => ({ repo, state: await prState(openPrs[repo]!), judgedSha: heads[repo]! }))),
-    }),
-  );
+  const gate = await step.run("check-bulk-gates", async () => {
+    const prs = await Promise.all(prRepos.map(async (repo) => ({ repo, state: await prState(openPrs[repo]!), judgedSha: heads[repo]! })));
+    const staleness = stale(prs);
+    return {
+      blockers: bulkBlockers({ base, labels: await ticketLabels(ticket.id), prs }),
+      stale: staleness.length ? staleEnd(ticket.id, staleness, base) : null,
+    };
+  });
   const urls = Object.values(openPrs);
-  if (held.length) return stop(["Not merging into the bulk branch.", "", ...held.map((b) => `- ${b}`)].join("\n"));
+  if (gate.blockers.length) return stop(["Not merging into the bulk branch.", "", ...gate.blockers.map((b) => `- ${b}`)].join("\n"));
+  // Another sub-ticket merged into the bulk branch first, and this one conflicts with it now.
+  if (gate.stale) return { stop: gate.stale };
 
   const { merged, failed } = await mergeInOrder({ step, runId, branch, order: prRepos, heads, openPrs, method: "squash" });
   const prUrls = merged.map((r) => openPrs[r]!);
   if (failed) {
+    // Another sub-ticket merged between the check and the merge, and this one conflicts with it now.
+    const late = merged.length
+      ? null
+      : await step.run("recheck-stale", () => readStale(ticket.id, openPrs, base));
+    if (late) return { stop: late };
     const text = partialText({ merged, failed, rest: prRepos.slice(merged.length + 1), urls: openPrs });
     return { stop: { end: { status: "failed", next: "human" }, text, record: { prUrls, error: failed.error } } };
   }
