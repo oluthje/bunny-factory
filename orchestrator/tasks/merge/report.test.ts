@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ticket } from "../../test/fixtures.ts";
-import { bulkMergedText, ciStopText, mergedText, notMergingText, partialText, prNote, wouldMergeText } from "./report.ts";
+import { bulkMergedText, ciStopText, mergedText, notMergingText, partialText, prNote, staleText, wouldMergeText } from "./report.ts";
 
 const api = "https://github.com/bunnyapp/api/pull/7429";
 const app = "https://github.com/bunnyapp/app/pull/3534";
@@ -85,6 +85,22 @@ describe("bulkMergedText", () => {
   it("says the PRs went into the bulk branch, and where Oscar reviews them", () => {
     expect(bulkMergedText(["api", "app"], urls, "factory/bulk/REC-40")).toBe(
       "Merged [bunnyapp/api#7429](https://github.com/bunnyapp/api/pull/7429), then [bunnyapp/app#3534](https://github.com/bunnyapp/app/pull/3534) into the bulk branch `factory/bulk/REC-40`, squashed, with no per-PR review. They reach `main` with the batch's PR from REC-40, which Oscar reviews.",
+    );
+  });
+});
+
+describe("staleText", () => {
+  const stale = ["app: conflicts with its base."];
+
+  it("says which round of resolve merges the base in", () => {
+    expect(staleText(stale, "main", { next: "resolve", round: 2 })).toBe(
+      "Not merging yet: a resolve run merges `main` in first (round 2 of 3).\n\n- app: conflicts with its base.",
+    );
+  });
+
+  it("hands the ticket to Oscar once the rounds are used up", () => {
+    expect(staleText(stale, "factory/bulk/REC-40", { next: "human", rounds: 3 })).toContain(
+      "still stale after 3 resolve runs since the last implement run. Merge `factory/bulk/REC-40` in by hand, then add `oscar-factory:merge`.",
     );
   });
 });

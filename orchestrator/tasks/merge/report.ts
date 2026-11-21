@@ -5,6 +5,8 @@ import { bulkParentOf } from "../../src/bulk.ts";
 import type { CiState } from "../../src/checks.ts";
 import { config } from "../../src/config.ts";
 import { markForGithub, prRef, type Ticket } from "../../src/logic.ts";
+import { taskLabel } from "../../src/labels.ts";
+import { RESOLVE_ROUNDS, type resolveRound } from "./gates.ts";
 import type { PrVerdict } from "./verdict.ts";
 
 type Urls = Record<string, string>;
@@ -35,6 +37,18 @@ export function mergedText(summary: string, order: readonly string[], urls: Urls
 /** The ticket's PRs went into its bulk branch: the batch's one PR into main is where Oscar reads them. */
 export function bulkMergedText(order: readonly string[], urls: Urls, base: string): string {
   return `Merged ${refs(order, urls)} into the bulk branch \`${base}\`, squashed, with no per-PR review. They reach \`${config.baseBranch}\` with the batch's PR from ${bulkParentOf(base)}, which Oscar reviews.`;
+}
+
+/**
+ * Some PRs conflict with their base `base`, or are behind it: hand them to resolve (`resolveRound`),
+ * or to Oscar once the rounds are used up. `stale` lines read `<repo>: <why>`.
+ */
+export function staleText(stale: readonly string[], base: string, next: ReturnType<typeof resolveRound>): string {
+  const head =
+    next.next === "resolve"
+      ? `Not merging yet: a resolve run merges \`${base}\` in first (round ${next.round} of ${RESOLVE_ROUNDS}).`
+      : `Not merging: still stale after ${next.rounds} resolve runs since the last implement run. Merge \`${base}\` in by hand, then add \`${taskLabel("merge")}\`.`;
+  return [head, "", ...stale.map((s) => `- ${s}`)].join("\n");
 }
 
 /** A merge failed after others went in: they can't be undone, so a human finishes. */

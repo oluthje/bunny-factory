@@ -21,7 +21,7 @@ The engine that runs every task is in `src/`, and knows no task by name: the con
 
 Runs start only from a ticket's `oscar-factory:<task>` label, and every run ends by moving the ticket's labels on. A task with a `clock` doesn't change that: on its cron the factory files a ticket with the task's label (`src/functions/clock.ts`), and the poller starts the run. Each task decides what comes next (its `conclude` sets `next`: a task, `human` to wait on Oscar, or `done`), and `src/transitions.ts` moves the labels, holding back any run that didn't succeed. A task's `prepare` can also end the run before any runner, with a `Stop`.
 
-The chain: `explore` (easy call) → `implement` (pushed commits) → `review` (posted on a PR) → `merge` (merged: done).
+The chain: `explore` (easy call) → `implement` (pushed commits) → `review` (posted on a PR) → `merge` (merged: done). When a PR conflicts with its base, or is behind it, `merge` hands it to `resolve`, which merges the base in and hands it straight back to `merge`.
 
 The deepen tasks sit before it: `deepen-scan` (files a ticket per strong candidate) → `deepen-refute` on each (a verdict, then waits on Oscar). Oscar grills through a candidate with `/factory-deepen-grill` and hands its ticket to `implement`, or cancels it.
 
@@ -97,13 +97,13 @@ review/extract.md             not called by the agent: the factory resumes the s
 
 Starts from: the `oscar-factory:merge` label, which a `review` run that posted on a PR sets, or Oscar does.
 
-Ends with: the ticket's PRs merged, all of them or none. Merged, the ticket keeps no factory label (`next: "done"`). Anything else waits on Oscar, with the reason on the ticket and on each PR.
+Ends with: the ticket's PRs merged, all of them or none. Merged, the ticket keeps no factory label (`next: "done"`). A PR that conflicts with its base, or is behind it, sends the ticket to `oscar-factory:resolve`, up to 3 rounds (`RESOLVE_ROUNDS`) since its last `implement` run. Anything else waits on Oscar, with the reason on the ticket and on each PR.
 
-Before any runner, `prepare` stops the run when the ticket has Oscar's flag label `oscar-factory:no-auto-merge`, has no open PR, or has the branch in a repo with no PR. Then it waits for CI on every PR, polling every 2 minutes for up to 28, and stops on red or a timeout. A PR with no checks at all counts as still running for the first 3 polls, while GitHub registers them. The agent gets no stack and no browser, only `factory-rules` and `rubric.md`, and 10 minutes. It changes nothing: its branch mode is `read`, so nothing it commits is pushed.
+Before any runner, `prepare` stops the run when the ticket has Oscar's flag label `oscar-factory:no-auto-merge`, has no open PR, or has the branch in a repo with no PR. Then it reads each PR's mergeable state, and a conflict or a branch behind its base goes to `resolve` before any CI wait or agent (gates.ts `stale`). Then it waits for CI on every PR, polling every 2 minutes for up to 28, and stops on red or a timeout. A PR with no checks at all counts as still running for the first 3 polls, while GitHub registers them. The agent gets no stack and no browser, only `factory-rules` and `rubric.md`, and 10 minutes. It changes nothing: its branch mode is `read`, so nothing it commits is pushed.
 
-Into a bulk branch (`src/bulk.ts`), when the ticket's parent has `oscar-factory:bulk` or its bulk branch exists, `prepare` takes `mergeIntoBulk` instead and no runner starts: no CI wait (CI runs only on PRs into `main`), no agent and no rubric. The orchestrator's checks (`bulkBlockers`) are the gate: no flag label, and every PR open, not a draft, mergeable, unchanged since the run started, and into the ticket's bulk branch, which is never `main` or `production`. Then it squash-merges each PR, live whatever `FACTORY_MERGE_DRY_RUN` says, and closes the ticket. Closing it unblocks: each ticket it blocked whose blockers are now all done or cancelled gets an "Unblocked" comment, which brings it back to the poller. The poller starts no run on a ticket with an open blocker. The `bulk-batches` sweep (`src/functions/bulk-batches.ts`) opens the bulk branch's draft PR into `main`, marks it ready once every sub-ticket is closed, and closes the parent when Oscar merges it.
+Into a bulk branch (`src/bulk.ts`), when the ticket's parent has `oscar-factory:bulk` or its bulk branch exists, `prepare` takes `mergeIntoBulk` instead and no runner starts: no CI wait (CI runs only on PRs into `main`), no agent and no rubric. The orchestrator's checks (`bulkBlockers`) are the gate: no flag label, and every PR open, not a draft, unchanged since the run started, and into the ticket's bulk branch, which is never `main` or `production`. A PR that conflicts with the bulk branch, often because another sub-ticket merged first, goes to `resolve`. Then it squash-merges each PR, live whatever `FACTORY_MERGE_DRY_RUN` says, and closes the ticket. Closing it unblocks: each ticket it blocked whose blockers are now all done or cancelled gets an "Unblocked" comment, which brings it back to the poller. The poller starts no run on a ticket with an open blocker. The `bulk-batches` sweep (`src/functions/bulk-batches.ts`) opens the bulk branch's draft PR into `main`, marks it ready once every sub-ticket is closed, and closes the parent when Oscar merges it.
 
-After the run, the orchestrator checks every PR again itself (`gates.ts`): open, not a draft, not into `production`, mergeable, CI green, head unchanged since the agent read it, no flag label. With `FACTORY_MERGE_DRY_RUN` on, the default, it only says what it would merge. Otherwise it merges in order, each with a merge commit guarded by the head the agent judged, and deletes the branch. A merge that hits a 5xx or a dropped connection is tried up to 3 times, and one GitHub already took counts as merged. A merge that fails after another went in stops there with a partial-merge note: merges aren't undone. Comments on the PRs and the ticket report are separate steps, so a retried report doesn't post on the PRs twice.
+After the run, the orchestrator checks every PR again itself (`gates.ts`): open, not a draft, not into `production`, mergeable, CI green, head unchanged since the agent read it, no flag label. A PR the agent cleared that has gone stale since goes to `resolve`. With `FACTORY_MERGE_DRY_RUN` on, the default, it only says what it would merge. Otherwise it merges in order, each with a merge commit guarded by the head the agent judged, and deletes the branch. A merge that hits a 5xx or a dropped connection is tried up to 3 times, and one GitHub already took counts as merged. A merge that fails after another went in stops there with a partial-merge note: merges aren't undone. Comments on the PRs and the ticket report are separate steps, so a retried report doesn't post on the PRs twice.
 
 ```
 merge/prompt.md              each open PR with its CI, body, reviews, unresolved threads and comments;
@@ -123,6 +123,26 @@ merge/extract.md             not called by the agent: the factory resumes the se
                                    also wants every open PR judged once, retried up to 2 times. An order
                                    that doesn't name every repo once falls back to api, app, portal,
                                    kong (`order.ts`).
+```
+
+### `resolve`
+
+Starts from: the `oscar-factory:resolve` label, which a `merge` run that found a stale PR sets, or Oscar does.
+
+Ends with: `origin/<base>` merged into the branch (a merge commit, never a rebase), conflicts resolved, and the typecheck and specs of the touched files run. The factory pushes without force, posts the resolution on each PR, and hands the ticket back to `oscar-factory:merge`, skipping `review`: merge judges the new head again and waits for CI. On a bulk parent it fixes the batch's PR into `main` and waits on Oscar. A run that can't resolve without changing what the base built, or dropping part of the ticket, aborts the merge, commits nothing, and waits on Oscar with the reason.
+
+It gets the stack for specs, no browser, and 30 minutes. It has no structured pass.
+
+```
+resolve/prompt.md            each open PR, with why it needs the base: conflicts, or behind
+├── 1. factory-rules
+├── 2. factory-stack                for typechecking and running specs
+├── 3–4. merge and resolve          git merge origin/<base> per repo; keep both sides' intent, adapt
+│                                   this ticket's change, never the base's
+├── 5. check                        typecheck or lint, and the specs of every file the merge touched
+├── 6. commit                       `<id>: Merge <base>`, then any fix on its own
+├── 7. the resolution               one line per conflicted file and fix, the checks, **Decision:** marks
+└── Finish line                     merged and clean, or nothing committed and the resolution says why
 ```
 
 ### `explore`
