@@ -28,6 +28,10 @@ Every service is already running natively (no Docker): Rails, Solid Queue, both 
 
 `cd ~/bunny/api && bin/rspec <files>`. The test database is prepared.
 
+## Migrations
+
+Create a migration with `bunny-stack run api bin/rails generate migration <Name>`, so its version is the current time. Never type a version yourself, rounded or invented: other runs are writing migrations for related tickets at the same time, their branches are merged together, and Rails refuses two migrations with the same version.
+
 ## Browser
 
 A headless Chromium is available through the Playwright MCP server, and it trusts the `bunny.internal` certificate. To log in as the seeded admin, open the URL this prints:

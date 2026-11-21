@@ -43,6 +43,8 @@ const PASS_SCHEMA = `${RUN_DIR}/structured-output.schema.json`;
 const PASS_TIMEOUT_SECONDS = 600;
 /** The most polls of catch-up, 15 seconds apart. */
 const CATCH_UP_POLLS = 80;
+/** How much of catch-up.log's end a failed catch-up's error keeps: the ticket's failure note shows 1500 characters. */
+const CATCH_UP_LOG_TAIL_CHARS = 1300;
 /**
  * How long a run may last beyond Claude's time limit, for the sandbox's wall-clock lifetime: catch-up,
  * every structured-output attempt, and half an hour for bundles in and out.
@@ -251,7 +253,22 @@ export const runTicket = inngest.createFunction(
           );
         }
         if (catchUpExit !== 0) {
-          throw new Error(`catch-up ${catchUpExit === null ? "timed out" : `exited ${catchUpExit}`}; see catch-up.log`);
+          // The sandbox is deleted on failure: keep its artifacts and stack logs in the run's
+          // folder, and put the end of catch-up.log in the error, which goes on the ticket.
+          const logTail = await step.run("save-catch-up-log", async () => {
+            const sb = await getSandbox(id);
+            const tail = await sh(
+              sb,
+              `tar czf ${RUN_DIR}/artifacts.tgz -C ~ artifacts bunny/.stack/logs 2>/dev/null
+               tail -n 40 ${ARTIFACTS}/catch-up.log 2>/dev/null | tail -c ${CATCH_UP_LOG_TAIL_CHARS}; true`,
+            );
+            await download(sb, `${RUN_DIR}/artifacts.tgz`, path.join(localDir, "artifacts.tgz")).catch(() => {});
+            return tail.trim();
+          });
+          const why = catchUpExit === null ? "timed out" : `exited ${catchUpExit}`;
+          throw new Error(
+            logTail ? `catch-up ${why}; the end of catch-up.log:\n\n${logTail}` : `catch-up ${why}; catch-up.log is empty`,
+          );
         }
         await step.run("record-catch-up", () =>
           updateRun(runId, { catchUpSeconds: Math.round((Date.now() - catchUp.startedAt) / 1000) }),
