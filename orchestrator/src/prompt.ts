@@ -1,5 +1,6 @@
 // The run prompt: tasks/<task>/prompt.md filled in for one ticket. The engine fills what every task
-// shares (the ticket, the evidence dir, the run dir, the time limit); the task's `prepare` supplies the rest.
+// shares (the ticket, the run's branch and base, the evidence dir, the run dir, the time limit); the
+// task's `prepare` supplies the rest.
 import fs from "node:fs";
 import path from "node:path";
 import type { TaskName } from "../tasks/index.ts";
@@ -29,15 +30,23 @@ export function promptTemplate(task: TaskName): string {
 }
 
 /** `vars` are the task's own placeholders, from its `prepare`; a task can't override the shared ones. */
-export function buildPrompt(args: { task: TaskName; ticket: Ticket; timeLimitMinutes: number; vars: Record<string, string> }): string {
-  const { task, ticket, timeLimitMinutes, vars } = args;
+export function buildPrompt(args: {
+  task: TaskName;
+  ticket: Ticket;
+  branch: string;
+  base: string;
+  timeLimitMinutes: number;
+  vars: Record<string, string>;
+}): string {
+  const { task, ticket, branch, base, timeLimitMinutes, vars } = args;
   return renderTemplate(promptTemplate(task), {
     ...vars,
     identifier: ticket.identifier,
     title: ticket.title,
     url: ticket.url,
     description: ticket.description.trim() || "(no description)",
-    branch: ticket.branchName,
+    branch,
+    base,
     evidenceDir: EVIDENCE_DIR,
     runDir: RUN_DIR,
     timeLimitMinutes: String(timeLimitMinutes),

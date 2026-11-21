@@ -1,4 +1,5 @@
-// `implement` creates or updates: with no branch on GitHub it branches from main and opens draft PRs;
+// `implement` creates or updates: with no branch on GitHub it branches from the run's base (main, or
+// a bulk branch) and opens draft PRs into it;
 // with one, it builds on the branch with Oscar's feedback and replies on Oscar's review threads.
 // It reviews and fixes its own work with `code-review`, and ends with commits and a PR body.
 // The tree of its prompt is in tasks/README.md.
@@ -31,10 +32,11 @@ export const implement: Task = {
   branch: "optional",
   timeLimitMinutes: null,
   clock: null,
+  onBulkParent: true, // fixes the PR from a bulk parent's branch into main
   prepare,
 };
 
-async function prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {
+async function prepare({ step, runId, ticket, branch, base, localDir, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {
   const openUrls = Object.values(openPrs);
 
   // An update's feedback, acted on with the ticket still the spec: Oscar's review threads waiting
@@ -59,7 +61,7 @@ async function prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes
   const thread = updating ? "" : await step.run("gather-findings", async () => renderThread(await ticketComments(ticket.id)));
 
   return {
-    vars: promptVars({ feedback: feedback?.markdown ?? null, thread }),
+    vars: promptVars({ feedback: feedback?.markdown ?? null, thread, base }),
     outputs: { prBody: PR_BODY },
     // One reply per review thread the update was given.
     pass:
@@ -87,7 +89,7 @@ async function prepare({ step, runId, ticket, branch, localDir, timeLimitMinutes
             if (files.prBody!.trim()) await setPrBody(open, body);
             updated.push(open);
           } else if (pushed.includes(repo)) {
-            opened.push(await openOrFindPr(repo, branch, prTitle(ticket), body));
+            opened.push(await openOrFindPr(repo, branch, prTitle(ticket), body, base));
           }
         }
         return { opened, updated };

@@ -19,9 +19,10 @@ export const deepenScan: Task = {
   docs: [],
   browser: false,
   stack: false,
-  branch: "none", // reads origin/main; nothing it commits is pushed
+  branch: "none", // reads origin/<base>, main unless the ticket is in a bulk batch; nothing it commits is pushed
   timeLimitMinutes: 40,
   clock: { cron: config.deepenScanCron, ticket: clockTicket },
+  onBulkParent: false,
   prepare,
 };
 

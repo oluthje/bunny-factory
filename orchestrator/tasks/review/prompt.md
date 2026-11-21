@@ -19,7 +19,7 @@ This is a factory run of the `review` task: review the ticket's branch below wit
 
 1. `factory-rules`: the rules for the whole run.
 2. `factory-stack`: the repos and the running Bunny stack, for running specs. There is no browser in this run.
-3. `code-review`, in each repo where `{{branch}}` differs from `origin/main`. The fixed point is `origin/main` and the spec is the ticket above, read with the PR body's Decisions.
+3. `code-review`, in each repo where `{{branch}}` differs from `origin/{{base}}`. The fixed point is `origin/{{base}}` and the spec is the ticket above, read with the PR body's Decisions.
 4. Fix the findings you're sure of. A finding is yours to fix when it has one clear fix that Oscar would plainly accept: a broken standard, a missed edge case, a small slip from the spec. Commit each fix on its own, with a spec where one fits, and run the specs covering the files you touched.
    Leave a finding as a comment when it needs a product decision, has more than one sensible fix, or you aren't sure. Start a product call's finding with **Decision needed:**, and give it two to four options: at least two real ways to do it, plus leaving it as it is where that's a choice. Give each option what the user sees, what it costs, and your pick.
 5. Write one review, covering every changed repo, to the review path, in exactly this shape. The factory reads the two verdict headings, so write each once, with `PASS` or `CHANGES REQUESTED` and nothing else after the colon. The verdicts judge the branch **after** your fixes. An axis fails if any repo fails it.

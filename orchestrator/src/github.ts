@@ -24,18 +24,81 @@ export async function commitIdentity(): Promise<{ name: string; email: string }>
   return { name: me.name ?? me.login, email: `${me.id}+${me.login}@users.noreply.github.com` };
 }
 
-/** Opens a PR for the branch, or returns the open one. */
-export async function openOrFindPr(repo: string, branch: string, title: string, body: string): Promise<string> {
+/**
+ * Opens a PR for the branch into `base`, or returns the open one. A base that isn't on GitHub yet
+ * (a bulk branch no sub-ticket has used in this repo) is created first, from main's head.
+ */
+export async function openOrFindPr(
+  repo: string,
+  branch: string,
+  title: string,
+  body: string,
+  base: string = config.baseBranch,
+  draft: boolean = config.draftPrs,
+): Promise<string> {
   const open = await findOpenPr(repo, branch);
   if (open) return open;
-  const pr = await gh<{ html_url: string }>("POST", `/repos/${config.githubOwner}/${repo}/pulls`, {
-    title,
-    body,
-    head: branch,
-    base: config.baseBranch,
-    draft: config.draftPrs,
-  });
+  if (base !== config.baseBranch && !(await branchSha(repo, base))) {
+    const main = await branchSha(repo, config.baseBranch);
+    if (!main) throw new Error(`${repo} has no \`${config.baseBranch}\` to start \`${base}\` from`);
+    // Another run may create it first: 422, "Reference already exists", is as good.
+    await gh("POST", `/repos/${config.githubOwner}/${repo}/git/refs`, { ref: `refs/heads/${base}`, sha: main }).catch((err) => {
+      if (!(err instanceof Error && /: 422 /.test(err.message))) throw err;
+    });
+  }
+  const pr = await gh<{ html_url: string }>("POST", `/repos/${config.githubOwner}/${repo}/pulls`, { title, body, head: branch, base, draft });
   return pr.html_url;
+}
+
+/** The branch's head on GitHub, or null when the repo has no such branch. */
+export async function branchSha(repo: string, branch: string): Promise<string | null> {
+  try {
+    return (await gh<{ object: { sha: string } }>("GET", `/repos/${config.githubOwner}/${repo}/git/ref/heads/${branch}`)).object.sha;
+  } catch (err) {
+    if (err instanceof Error && /: 404 /.test(err.message)) return null;
+    throw err;
+  }
+}
+
+/** Which of the branches are on GitHub in at least one of the factory's repos. */
+export async function branchesOnGitHub(names: readonly string[]): Promise<string[]> {
+  const found: string[] = [];
+  for (const name of names) {
+    for (const repo of config.repos) {
+      if (await branchSha(repo, name)) {
+        found.push(name);
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/** Every branch in the repo whose name starts with `prefix`. Up to 100. */
+export async function branchesWithPrefix(repo: string, prefix: string): Promise<string[]> {
+  const refs = await gh<{ ref: string }[]>("GET", `/repos/${config.githubOwner}/${repo}/git/matching-refs/heads/${prefix}?per_page=100`);
+  return refs.map((r) => r.ref.replace(/^refs\/heads\//, ""));
+}
+
+/** How many commits `head` has that `base` hasn't. */
+export async function aheadBy(repo: string, base: string, head: string): Promise<number> {
+  return (await gh<{ ahead_by: number }>("GET", `/repos/${config.githubOwner}/${repo}/compare/${base}...${head}`)).ahead_by;
+}
+
+/** The newest PR from `head` into `base`, open or not, or null when there was never one. */
+export async function latestPr(
+  repo: string,
+  head: string,
+  base: string,
+): Promise<{ url: string; state: "open" | "merged" | "closed"; draft: boolean; headSha: string } | null> {
+  const owner = config.githubOwner;
+  const prs = await gh<{ html_url: string; state: string; merged_at: string | null; draft: boolean; head: { sha: string } }[]>(
+    "GET",
+    `/repos/${owner}/${repo}/pulls?state=all&sort=created&direction=desc&base=${encodeURIComponent(base)}&head=${encodeURIComponent(`${owner}:${head}`)}`,
+  );
+  const pr = prs[0];
+  if (!pr) return null;
+  return { url: pr.html_url, state: pr.state === "open" ? "open" : pr.merged_at ? "merged" : "closed", draft: pr.draft, headSha: pr.head.sha };
 }
 
 /** The open PR for the branch, or null. */
@@ -243,12 +306,14 @@ export async function commitChecks(repo: string, sha: string): Promise<{ runs: C
 }
 
 /**
- * Merges the PR with a merge commit, only if its head is still `sha`: anything pushed since makes
- * GitHub refuse, rather than merge code nobody judged.
+ * Merges the PR, with a merge commit unless told to squash, only if its head is still `sha`:
+ * anything pushed since makes GitHub refuse, rather than merge code nobody judged.
  */
-export async function mergePr(url: string, sha: string): Promise<void> {
+export type MergeMethod = "merge" | "squash";
+
+export async function mergePr(url: string, sha: string, method: MergeMethod = "merge"): Promise<void> {
   const { repo, number } = parsePrUrl(url);
-  await gh("PUT", `/repos/${config.githubOwner}/${repo}/pulls/${number}/merge`, { sha, merge_method: "merge" });
+  await gh("PUT", `/repos/${config.githubOwner}/${repo}/pulls/${number}/merge`, { sha, merge_method: method });
 }
 
 /** Deletes the branch; a no-op when the repo already deleted it on merge. */

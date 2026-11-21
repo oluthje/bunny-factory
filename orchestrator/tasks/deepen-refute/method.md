@@ -4,7 +4,7 @@ The candidate was written by an agent sent to find something to deepen, so it ar
 
 ## 1. Check the claims
 
-List every claim the candidate makes about the code: each file it names, each friction in its Problem, each module it calls shallow, each benefit that rests on how the code is today. Open each one at `origin/main` and mark it **holds**, **overstated** or **wrong**, with `repo/path/to/file.rb:42`.
+List every claim the candidate makes about the code: each file it names, each friction in its Problem, each module it calls shallow, each benefit that rests on how the code is today. Open each one at the base your prompt names (`origin/<base>`) and mark it **holds**, **overstated** or **wrong**, with `repo/path/to/file.rb:42`.
 
 Done when every file under Files and every sentence of the Problem has a mark.
 

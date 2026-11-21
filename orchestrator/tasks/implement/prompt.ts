@@ -37,16 +37,16 @@ export function renderThread(comments: readonly TicketComment[]): string {
  * `feedback` is null when the run creates (no branch on GitHub yet), or the rendered feedback
  * section when it builds on the ticket's existing branch. `thread` is `renderThread`'s output, for a create.
  */
-export function promptVars(args: { feedback: string | null; thread: string }): Record<string, string> {
-  const { feedback, thread } = args;
+export function promptVars(args: { feedback: string | null; thread: string; base: string }): Record<string, string> {
+  const { feedback, thread, base } = args;
   return {
     prBodyPath: PR_BODY,
     thread,
     mode: feedback !== null ? "update" : "create",
     start:
       feedback !== null
-        ? "checked out at the PR's current head in every repo that has it, and from an up-to-date `main` in the rest"
-        : "checked out from an up-to-date `main` in every repo",
+        ? `checked out at the PR's current head in every repo that has it, and from an up-to-date \`${base}\` in the rest`
+        : `checked out from an up-to-date \`${base}\` in every repo`,
     feedback:
       feedback !== null
         ? `## Feedback for this round\n\n${feedback}`

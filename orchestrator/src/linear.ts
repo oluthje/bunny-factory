@@ -167,3 +167,28 @@ export async function uploadFile(data: Buffer, filename: string, contentType: st
 export async function ticketLabels(ticketId: string): Promise<string[]> {
   return (await (await linear().issue(ticketId)).labels()).nodes.map((l) => l.name);
 }
+
+/** A ticket by its identifier (`REC-123`), or null when there's none. */
+export async function ticketByIdentifier(identifier: string): Promise<{ id: string; identifier: string; title: string; url: string } | null> {
+  const issue = await linear().issue(identifier).catch(() => null);
+  return issue ? { id: issue.id, identifier: issue.identifier, title: issue.title, url: issue.url } : null;
+}
+
+/** The ticket's parent, with its labels by name, or null when it has none. */
+export async function ticketParent(ticketId: string): Promise<{ id: string; identifier: string; labels: string[] } | null> {
+  const data = await linear().client.request<
+    { issue: { parent: { id: string; identifier: string; labels: { nodes: { name: string }[] } } | null } },
+    { id: string }
+  >(`query($id: String!) { issue(id: $id) { parent { id identifier labels { nodes { name } } } } }`, { id: ticketId });
+  const p = data.issue.parent;
+  return p ? { id: p.id, identifier: p.identifier, labels: p.labels.nodes.map((l) => l.name) } : null;
+}
+
+/** How many of the ticket's sub-tickets are neither done nor cancelled. Up to 250. */
+export async function openSubTickets(ticketId: string): Promise<number> {
+  const data = await linear().client.request<{ issue: { children: { nodes: { state: { type: string } }[] } } }, { id: string }>(
+    `query($id: String!) { issue(id: $id) { children(first: 250) { nodes { state { type } } } } }`,
+    { id: ticketId },
+  );
+  return data.issue.children.nodes.filter((c) => c.state.type !== "completed" && c.state.type !== "canceled").length;
+}

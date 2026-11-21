@@ -14,7 +14,7 @@ What earlier scans proposed, and how each fared.
 
 ## Run values
 
-- Every repo is under `~/bunny`, at `origin/main`, detached. Nothing you commit leaves the runner.
+- Every repo is under `~/bunny`, at `origin/{{base}}`, detached. Nothing you commit leaves the runner.
 - Candidates path: `{{candidatesPath}}`
 - Report path: `{{reportPath}}`
 - Time limit: {{timeLimitMinutes}} minutes. The candidates file is the run's output and the report is its picture: write the file first.
@@ -26,7 +26,7 @@ What earlier scans proposed, and how each fared.
    - The ticket's description is the direction. When it gives none, the commit history of every repo picks the hot spots.
    - Propose what is new: a candidate that is not among the earlier ones above. One the refuter marked `not yet` comes back only when the condition it named now holds, and then its Problem says so.
    - A candidate may span repos, such as an `api` module and the `app` code that calls it.
-   - Stop exploring when each candidate's Files all exist at `origin/main` and its Problem cites at least one `repo/path/to/file.rb:42` you opened.
+   - Stop exploring when each candidate's Files all exist at `origin/{{base}}` and its Problem cites at least one `repo/path/to/file.rb:42` you opened.
 3. Write the candidates file at the candidates path: one section per candidate, strongest first, in exactly this shape.
 
 ```markdown

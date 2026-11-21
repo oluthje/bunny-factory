@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { factory, findingsComment as findings, oscar, renderPrompt } from "../../test/fixtures.ts";
 import { promptVars, renderThread } from "./prompt.ts";
 
-const render = (feedback: string | null = null, thread = "") => renderPrompt("implement", promptVars({ feedback, thread }));
+const render = (feedback: string | null = null, thread = "") => renderPrompt("implement", promptVars({ feedback, thread, base: "main" }));
 
 describe("implement's prompt", () => {
   it("renders both modes with no placeholder left", () => {

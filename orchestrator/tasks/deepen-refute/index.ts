@@ -14,9 +14,10 @@ export const deepenRefute: Task = {
   docs: ["method.md"], // read at step 3
   browser: false,
   stack: false,
-  branch: "none", // reads origin/main; nothing it commits is pushed
+  branch: "none", // reads origin/<base>, main unless the ticket is in a bulk batch; nothing it commits is pushed
   timeLimitMinutes: 20,
   clock: null,
+  onBulkParent: false,
   prepare,
 };
 

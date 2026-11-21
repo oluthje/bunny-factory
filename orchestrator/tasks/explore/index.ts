@@ -1,4 +1,4 @@
-// `explore` checks the ticket against the code on origin/main, read-only, and ends with findings and
+// `explore` checks the ticket against the code on the run's base (origin/main, or a bulk branch), read-only, and ends with findings and
 // a verdict. The factory posts the findings on the ticket, tagged so a later explore run and
 // implement can find them, and the verdict picks the next label: an easy call queues implement.
 // It gets the browser for UI claims and a short time limit. The tree of its prompt is in tasks/README.md.
@@ -19,6 +19,7 @@ export const explore: Task = {
   branch: "none",
   timeLimitMinutes: 20,
   clock: null,
+  onBulkParent: false,
   prepare,
 };
 

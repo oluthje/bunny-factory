@@ -10,7 +10,7 @@ This is a factory run of the `explore` task: check the ticket below against the 
 
 ## Run values
 
-- Every repo is at `origin/main`, detached. Nothing you commit leaves the runner.
+- Every repo is at `origin/{{base}}`, detached. Nothing you commit leaves the runner.
 - Evidence directory: `{{evidenceDir}}`
 - Findings path: `{{findingsPath}}`
 - Time limit: {{timeLimitMinutes}} minutes. Exploring is the cheap run before implement: aim to finish well inside it.

@@ -19,12 +19,15 @@ import { finished, nextTask, requeued, type RunEnd } from "./transitions.ts";
  * - `browser`: the Playwright MCP server, for checking and capturing the UI.
  * - `stack`: the catch-up before Claude starts (gems, npm, migrations, the running Bunny stack).
  *   A task that only reads code goes without, and starts minutes sooner.
- * - `branch`: the ticket's branch. `optional` builds on it where it's on GitHub and branches from
- *   main where it isn't; `required` fails the run when no repo has it on GitHub; `read` is
- *   `required` that never pushes, so whatever the agent commits stays on the runner; `none` never
- *   fetches or checks it out: every repo is at `origin/main`, and nothing is pushed.
+ * - `branch`: the run's branch, the ticket's own (or a bulk parent's bulk branch). `optional` builds
+ *   on it where it's on GitHub and branches from the run's base where it isn't; `required` fails the
+ *   run when no repo has it on GitHub; `read` is `required` that never pushes, so whatever the agent
+ *   commits stays on the runner; `none` never fetches or checks it out: every repo is at
+ *   `origin/<base>`, and nothing is pushed.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
  * - `clock`: the task's clock trigger, or null when only a label starts it.
+ * - `onBulkParent`: whether it may run on a bulk parent (src/bulk.ts), whose runs work on the bulk
+ *   branch itself. A parent is a container for its sub-tickets: only fixing its PR into main runs there.
  * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs, or
  *   a `Stop` to end the run there, with no runner.
  */
@@ -36,6 +39,7 @@ export type Task = {
   branch: "optional" | "required" | "read" | "none";
   timeLimitMinutes: number | null;
   clock: Clock | null;
+  onBulkParent: boolean;
   prepare: (ctx: RunContext) => Promise<Prepared | Stop>;
 };
 
@@ -64,7 +68,10 @@ export type RunContext = {
   step: Step;
   runId: string;
   ticket: Ticket;
+  /** The branch the run checks out and pushes: the ticket's own, or a bulk parent's bulk branch. */
   branch: string;
+  /** The branch the run builds from and its PRs target: main, or the parent's bulk branch (src/bulk.ts). */
+  base: string;
   /** The run's folder on the orchestrator: bundles, artifacts and the files the run wrote. */
   localDir: string;
   timeLimitMinutes: number;

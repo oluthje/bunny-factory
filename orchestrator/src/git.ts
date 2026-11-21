@@ -51,18 +51,25 @@ function remoteUrl(repo: string): string {
   return `https://github.com/${config.githubOwner}/${repo}.git`;
 }
 
-/** Clones the mirror on first use, then fetches the base branch. Returns its sha. */
-async function refreshMirror(repo: string): Promise<string> {
+/**
+ * Clones the mirror on first use, then fetches main, and `base` when it isn't main. Returns `base`'s
+ * sha. A base not on GitHub yet (a bulk branch this repo hasn't used) starts at main: the mirror's
+ * ref points there, so the run's bundle carries it under its own name, and the PR creates it.
+ */
+async function refreshMirror(repo: string, base: string): Promise<string> {
   const dir = mirrorDir(repo);
-  const base = config.baseBranch;
+  const main = config.baseBranch;
   if (!fs.existsSync(path.join(dir, "HEAD"))) {
     fs.mkdirSync(path.dirname(dir), { recursive: true });
-    await git(["clone", "--bare", "--single-branch", "--branch", base, remoteUrl(repo), dir], { auth: true });
+    await git(["clone", "--bare", "--single-branch", "--branch", main, remoteUrl(repo), dir], { auth: true });
   } else {
-    await git(["fetch", "--quiet", "--no-tags", "origin", `+refs/heads/${base}:refs/heads/${base}`], {
+    await git(["fetch", "--quiet", "--no-tags", "origin", `+refs/heads/${main}:refs/heads/${main}`], {
       cwd: dir,
       auth: true,
     });
+  }
+  if (base !== main && !(await fetchBranch(repo, base))) {
+    await git(["update-ref", `refs/heads/${base}`, `refs/heads/${main}`], { cwd: dir });
   }
   return git(["rev-parse", `refs/heads/${base}`], { cwd: dir });
 }
@@ -86,10 +93,10 @@ async function fetchBranch(repo: string, branch: string): Promise<string | null>
  * The branch's diff against the base, three-dot (from the merge-base), as GitHub shows it on the
  * PR: default context, no colour or external diff tools.
  */
-export function branchDiff(repo: string, branch: string): Promise<string> {
+export function branchDiff(repo: string, branch: string, base: string): Promise<string> {
   return withMirror(repo, async () => {
     return git(
-      ["diff", "--no-color", "--no-ext-diff", `refs/heads/${config.baseBranch}...refs/heads/${branch}`],
+      ["diff", "--no-color", "--no-ext-diff", `refs/heads/${base}...refs/heads/${branch}`],
       { cwd: mirrorDir(repo) },
     );
   });
@@ -99,27 +106,32 @@ export function branchDiff(repo: string, branch: string): Promise<string> {
  * A full bundle of the base branch, plus the work branch when given. Full, because the sandbox's
  * clones are partial (blob:none).
  */
-async function bundleBase(repo: string, outFile: string, branch?: string): Promise<void> {
+async function bundleBase(repo: string, outFile: string, base: string, branch?: string): Promise<void> {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
-  const refs = [`refs/heads/${config.baseBranch}`, ...(branch ? [`refs/heads/${branch}`] : [])];
+  const refs = [`refs/heads/${base}`, ...(branch ? [`refs/heads/${branch}`] : [])];
   await git(["bundle", "create", outFile, ...refs], { cwd: mirrorDir(repo) });
 }
 
 /**
- * A run's way in: refreshes the mirror's main, fetches the ticket's branch when `branch` is given
- * and it's on GitHub, and bundles both, all under one hold of the repo's lock so the bundle's main
- * is the `base` returned. `head` is the branch's sha on GitHub, or null.
+ * A run's way in: refreshes the mirror's `base` (main, or a bulk branch), fetches the run's branch
+ * when `branch` is given and it's on GitHub, and bundles both, all under one hold of the repo's
+ * lock so the bundle's base is the sha returned as `base`. `head` is the branch's sha on GitHub, or null.
  */
-export function bundleForRun(repo: string, outFile: string, branch: string | null): Promise<{ base: string; head: string | null }> {
+export function bundleForRun(
+  repo: string,
+  outFile: string,
+  baseBranch: string,
+  branch: string | null,
+): Promise<{ base: string; head: string | null }> {
   return withMirror(repo, async () => {
-    const base = await refreshMirror(repo);
+    const base = await refreshMirror(repo, baseBranch);
     const head = branch ? await fetchBranch(repo, branch) : null;
-    await bundleBase(repo, outFile, head ? branch! : undefined);
+    await bundleBase(repo, outFile, baseBranch, head ? branch! : undefined);
     return { base, head };
   });
 }
 
-/** Imports the branch from a bundle the sandbox made (`main..branch`) and pushes it to GitHub. */
+/** Imports the branch from a bundle the sandbox made (`base..branch`) and pushes it to GitHub. */
 export function importAndPush(repo: string, bundleFile: string, branch: string): Promise<string> {
   return withMirror(repo, async () => {
     const dir = mirrorDir(repo);
