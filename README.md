@@ -20,6 +20,7 @@ Each command runs `orchestrator/scripts/factory.ts` inside the machine over `fly
 | `fac stop` | Drains. No new run starts. A queued run with no runner yet ends `cancelled`, keeps its task label, and doesn't count toward the loop cap. Runs that already have a runner finish. |
 | `fac stop --now` | Stops at once: every run in flight is cancelled, its runner deleted, and its ticket's task label put back, so it runs again after `start`. |
 | `fac start` | New runs start again on the next poll. Tickets labelled while the factory was stopped are picked up then. |
+| `fac deepen [direction]` | Files a `deepen-scan` ticket now and prints its URL; the scan starts on the next poll. The direction says where to look (`fac deepen billing in api`), in letters, digits and `. , / _ -`; without one the commit history's hot spots choose. The same ticket is filed by the clock when `FACTORY_DEEPEN_SCAN_CRON` is set: `fly secrets set FACTORY_DEEPEN_SCAN_CRON='0 7 * * 1,4' -a oscar-bunny-factory` is Mondays and Thursdays at 07:00 California time (`FACTORY_TZ`). The clock holds back while 3 candidates wait undecided; `fac deepen` doesn't. See [orchestrator/tasks/README.md](orchestrator/tasks/README.md#deepen-scan). |
 
 The state is a row in `factory.db`, so it survives deploys and restarts. `sweep-runs` keeps running while the factory is stopped. For logs, use `fly logs -a oscar-bunny-factory` and the Inngest dashboard.
 
