@@ -1,7 +1,9 @@
 // The orchestrator's own checks before it merges, whatever the agent judged: run right before the
-// first merge, on what GitHub and Linear say then. Pure: it takes what index.ts fetched and does
+// first merge, on what GitHub and Linear say then. `bulkBlockers` is the same for a PR into a bulk
+// branch (src/bulk.ts), which no agent judges and no CI runs on. Pure: it takes what index.ts fetched and does
 // no I/O, so it is unit-tested in gates.test.ts.
 import type { CiState } from "../../src/checks.ts";
+import { isBulkBranch } from "../../src/bulk.ts";
 import type { PrState } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
 
@@ -16,20 +18,46 @@ export type PrCheck = { repo: string; state: PrState; ci: CiState; judgedSha: st
  * all can. `labels` are the ticket's labels now.
  */
 export function blockers({ prs, labels }: { prs: readonly PrCheck[]; labels: readonly string[] }): string[] {
-  const ticket = [labels.includes(NO_AUTO_MERGE_LABEL) ? `\`${NO_AUTO_MERGE_LABEL}\` is on the ticket.` : null];
-  return [...ticket, ...prs.flatMap((pr) => prBlockers(pr).map((why) => `${pr.repo}: ${why}`))].filter((b): b is string => b !== null);
+  return [...ticketBlockers(labels), ...prs.flatMap((pr) => prBlockers(pr).map((why) => `${pr.repo}: ${why}`))];
 }
 
-function prBlockers({ state, ci, judgedSha }: PrCheck): string[] {
+function ticketBlockers(labels: readonly string[]): string[] {
+  return labels.includes(NO_AUTO_MERGE_LABEL) ? [`\`${NO_AUTO_MERGE_LABEL}\` is on the ticket.`] : [];
+}
+
+const present = (b: string | null): b is string => b !== null;
+
+/** A PR into a bulk branch: no CI, and no agent's verdict, so `judgedSha` is the head the run started on. */
+export type BulkPrCheck = Omit<PrCheck, "ci">;
+
+/**
+ * Why the ticket's PRs can't merge into its bulk branch `base`. Without an agent's judgement, the
+ * base is checked hard: it must be a bulk branch, never main or production, and every PR must target it.
+ */
+export function bulkBlockers({ prs, labels, base }: { prs: readonly BulkPrCheck[]; labels: readonly string[]; base: string }): string[] {
+  if (!isBulkBranch(base)) return [`\`${base}\` isn't a bulk branch.`];
+  const each = prs.flatMap((pr) => {
+    if (!pr.state.open) return [`${pr.repo}: is no longer open.`];
+    const wrongBase = pr.state.base !== base ? `targets \`${pr.state.base}\`, not the bulk branch \`${base}\`.` : null;
+    return [wrongBase, ...stateBlockers(pr)].filter(present).map((why) => `${pr.repo}: ${why}`);
+  });
+  return [...ticketBlockers(labels), ...each];
+}
+
+function prBlockers(pr: PrCheck): string[] {
+  const { state, ci } = pr;
   if (!state.open) return ["is no longer open."];
   return [
     PROTECTED_BASES.includes(state.base) ? `targets \`${state.base}\`, which is merged by hand.` : null,
-    state.draft ? "is a draft." : null,
-    state.headSha !== judgedSha ? "has commits pushed after the merge run judged it." : null,
-    mergeability(state),
+    ...stateBlockers(pr),
     ci.state === "red" ? `CI failed: ${ci.failing.join(", ")}.` : null,
     ci.state === "pending" ? `CI is still running: ${ci.pending.join(", ")}.` : null,
-  ].filter((b): b is string => b !== null);
+  ].filter(present);
+}
+
+/** What stands in the way of an open PR, whatever its base. */
+function stateBlockers({ state, judgedSha }: BulkPrCheck): (string | null)[] {
+  return [state.draft ? "is a draft." : null, state.headSha !== judgedSha ? "has commits pushed after the merge run judged it." : null, mergeability(state)];
 }
 
 /** What GitHub's mergeable state says, when it stands in the way. A draft is reported on its own. */

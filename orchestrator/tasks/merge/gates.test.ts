@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CiState } from "../../src/checks.ts";
 import type { PrState } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
-import { blockers, type PrCheck } from "./gates.ts";
+import { blockers, bulkBlockers, type PrCheck } from "./gates.ts";
 
 const green: CiState = { state: "green", failing: [], pending: [], checks: 3 };
 const state = (over: Partial<PrState> = {}): PrState => ({
@@ -71,5 +71,38 @@ describe("blockers", () => {
       "app: is a draft.",
       "api: targets `production`, which is merged by hand.",
     ]);
+  });
+});
+
+describe("bulkBlockers", () => {
+  const BULK = "factory/bulk/REC-40";
+  const bulkPr = (over: Partial<PrState> = {}) => ({ repo: over.repo ?? "app", state: state({ base: BULK, ...over }), judgedSha: "abc" });
+  const checkBulk = (prs: ReturnType<typeof bulkPr>[], labels: string[] = ["Bug"], base = BULK) => bulkBlockers({ prs, labels, base });
+
+  it("clears open, ready, clean PRs into the bulk branch, with no CI to wait for", () => {
+    expect(checkBulk([bulkPr(), bulkPr({ repo: "api" })])).toEqual([]);
+  });
+
+  it("still holds back a flagged ticket", () => {
+    expect(checkBulk([bulkPr()], [NO_AUTO_MERGE_LABEL])).toEqual(["`oscar-factory:no-auto-merge` is on the ticket."]);
+  });
+
+  it("holds back a PR whose base isn't the ticket's bulk branch", () => {
+    expect(checkBulk([bulkPr({ base: "main" })])).toEqual(["app: targets `main`, not the bulk branch `factory/bulk/REC-40`."]);
+    expect(checkBulk([bulkPr({ base: "factory/bulk/REC-41" })])).toEqual([
+      "app: targets `factory/bulk/REC-41`, not the bulk branch `factory/bulk/REC-40`.",
+    ]);
+  });
+
+  it("never takes main or production as a bulk branch, whatever the run was given", () => {
+    expect(checkBulk([bulkPr({ base: "main" })], ["Bug"], "main")).toEqual(["`main` isn't a bulk branch."]);
+    expect(checkBulk([bulkPr({ base: "production" })], ["Bug"], "production")).toEqual(["`production` isn't a bulk branch."]);
+  });
+
+  it("still holds back a draft, a conflict, a closed PR and unjudged commits", () => {
+    expect(checkBulk([bulkPr({ draft: true })])).toEqual(["app: is a draft."]);
+    expect(checkBulk([bulkPr({ mergeable: false, mergeableState: "dirty" })])).toEqual(["app: conflicts with its base."]);
+    expect(checkBulk([bulkPr({ open: false })])).toEqual(["app: is no longer open."]);
+    expect(checkBulk([bulkPr({ headSha: "def" })])).toEqual(["app: has commits pushed after the merge run judged it."]);
   });
 });

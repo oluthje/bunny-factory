@@ -1,7 +1,9 @@
 // What the merge run says on the ticket and the PRs, for each way it can end: not merging and why,
 // a dry run's "would merge", merged, or a partial merge to finish by hand. Pure: no I/O, so it is
 // unit-tested in report.test.ts.
+import { bulkParentOf } from "../../src/bulk.ts";
 import type { CiState } from "../../src/checks.ts";
+import { config } from "../../src/config.ts";
 import { markForGithub, prRef, type Ticket } from "../../src/logic.ts";
 import type { PrVerdict } from "./verdict.ts";
 
@@ -28,6 +30,11 @@ export function wouldMergeText(summary: string, order: readonly string[], urls: 
 
 export function mergedText(summary: string, order: readonly string[], urls: Urls): string {
   return `Auto-merged ${refs(order, urls)}. ${summary}`;
+}
+
+/** The ticket's PRs went into its bulk branch: the batch's one PR into main is where Oscar reads them. */
+export function bulkMergedText(order: readonly string[], urls: Urls, base: string): string {
+  return `Merged ${refs(order, urls)} into the bulk branch \`${base}\`, squashed, with no per-PR review. They reach \`${config.baseBranch}\` with the batch's PR from ${bulkParentOf(base)}, which Oscar reviews.`;
 }
 
 /** A merge failed after others went in: they can't be undone, so a human finishes. */

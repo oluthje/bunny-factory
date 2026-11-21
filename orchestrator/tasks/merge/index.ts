@@ -3,18 +3,21 @@
 // ticket, read-only and without the stack, and writes a verdict per PR; then the orchestrator
 // checks the PRs again itself and merges them in order, unless `config.mergeDryRun` holds it to
 // saying what it would merge. Oscar's `oscar-factory:no-auto-merge` flag stops it before any of
-// that. The tree of its prompt is in tasks/README.md.
+// that. Into a bulk branch (src/bulk.ts) it takes `mergeIntoBulk` instead: no CI to wait for, no
+// agent, only the orchestrator's checks, then a squash merge, live whatever the dry-run setting,
+// since Oscar reviews the batch's PR into main. The tree of its prompt is in tasks/README.md.
+import { isBulkBranch } from "../../src/bulk.ts";
 import { ciState, combineCi, type CiState } from "../../src/checks.ts";
 import { config } from "../../src/config.ts";
-import { commentOnPr, commitChecks, deleteBranch, getPrBody, mergePr, prComments, prReviews, prState, reviewThreads } from "../../src/github.ts";
+import { commentOnPr, commitChecks, deleteBranch, getPrBody, mergePr, type MergeMethod, prComments, prReviews, prState, reviewThreads } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
-import { ticketComments, ticketLabels } from "../../src/linear.ts";
-import { finish, passResult, type Outcome, type Prepared, type RunContext, type Stop, type Task } from "../../src/task.ts";
+import { closeTicket, ticketComments, ticketLabels } from "../../src/linear.ts";
+import { finish, passResult, type Outcome, type Prepared, type RunContext, type Step, type Stop, type Task } from "../../src/task.ts";
 import type { RunEnd } from "../../src/transitions.ts";
-import { blockers } from "./gates.ts";
+import { blockers, bulkBlockers } from "./gates.ts";
 import { mergeOrder } from "./order.ts";
 import { promptVars, VERDICT } from "./prompt.ts";
-import { ciStopText, mergedText, notMergingText, partialText, prNote, wouldMergeText } from "./report.ts";
+import { bulkMergedText, ciStopText, mergedText, notMergingText, partialText, prNote, wouldMergeText } from "./report.ts";
 import { holdouts, mergeVerdictJsonSchema, parseMergeVerdict, verdictRetryPrompt } from "./verdict.ts";
 
 export const merge: Task = {
@@ -42,7 +45,7 @@ const MERGE_TRIES = 3;
 
 const stop = (text: string, end: RunEnd = { status: "succeeded", next: "human" }): Stop => ({ stop: { end, text } });
 
-async function prepare({ step, runId, ticket, branch, heads, openPrs, timeLimitMinutes }: RunContext): Promise<Prepared | Stop> {
+async function prepare({ step, runId, ticket, branch, base, heads, openPrs, timeLimitMinutes }: RunContext): Promise<Prepared | Stop> {
   if (ticket.labels.includes(NO_AUTO_MERGE_LABEL)) return stop(`Not merging: \`${NO_AUTO_MERGE_LABEL}\` is on the ticket.`);
   const repos = Object.keys(openPrs);
   if (repos.length === 0) return stop("Not merging: the branch has no open PR.");
@@ -50,6 +53,7 @@ async function prepare({ step, runId, ticket, branch, heads, openPrs, timeLimitM
   const unpaired = Object.keys(heads).filter((r) => !openPrs[r]);
   if (unpaired.length) return stop(`Not merging: \`${branch}\` is in ${unpaired.join(", ")} with no open PR.`);
   const prRepos = repos as [string, ...string[]];
+  if (isBulkBranch(base)) return mergeIntoBulk({ step, runId, ticket, branch, base, heads, openPrs, prRepos });
 
   // CI on the heads the agent will read, until it's done. Red, or still running when the wait
   // runs out, goes to Oscar without an agent.
@@ -153,43 +157,7 @@ async function prepare({ step, runId, ticket, branch, heads, openPrs, timeLimitM
         return { status: "succeeded", prUrls: allUrls };
       }
 
-      // In order, each only if its head is still the one judged; stop at the first that fails.
-      // Each merge is its own step, so a replay never merges twice. A try that GitHub took but
-      // whose answer was lost shows up as already merged, and counts.
-      const merged: string[] = [];
-      let failed: { repo: string; error: string } | null = null;
-      for (const repo of order) {
-        const result = await step.run(`merge-${repo}`, async () => {
-          const url = openPrs[repo]!;
-          let error = "";
-          for (let attempt = 0; attempt < MERGE_TRIES; attempt++) {
-            try {
-              await mergePr(url, heads[repo]!);
-              error = "";
-              break;
-            } catch (err) {
-              error = err instanceof Error ? err.message : String(err);
-            }
-            const now = await prState(url).catch(() => null);
-            if (now?.merged) {
-              error = "";
-              break;
-            }
-            // GitHub said no (a 4xx): asking again won't change its mind.
-            if (/: 4\d\d /.test(error)) break;
-            await new Promise((r) => setTimeout(r, 5000));
-          }
-          if (error) return { ok: false as const, error };
-          // The merge went in: a branch left behind is untidy, not a failure.
-          await deleteBranch(repo, branch).catch((err) => console.warn(`[${runId}] couldn't delete ${repo}/${branch}: ${err}`));
-          return { ok: true as const };
-        });
-        if (!result.ok) {
-          failed = { repo, error: result.error.slice(0, 500) };
-          break;
-        }
-        merged.push(repo);
-      }
+      const { merged, failed } = await mergeInOrder({ step, runId, branch, order, heads, openPrs, method: "merge" });
       const prUrls = merged.map((r) => openPrs[r]!);
 
       if (failed) {
@@ -204,4 +172,89 @@ async function prepare({ step, runId, ticket, branch, heads, openPrs, timeLimitM
       return { status: "succeeded", prUrls };
     },
   };
+}
+
+/**
+ * Merges the PRs in order, each only if its head is still the one judged, and stops at the first
+ * that fails. Each merge is its own step, so a replay never merges twice. A try that GitHub took
+ * but whose answer was lost shows up as already merged, and counts.
+ */
+async function mergeInOrder(args: {
+  step: Step;
+  runId: string;
+  branch: string;
+  order: readonly string[];
+  heads: Record<string, string>;
+  openPrs: Record<string, string>;
+  method: MergeMethod;
+}): Promise<{ merged: string[]; failed: { repo: string; error: string } | null }> {
+  const { step, runId, branch, order, heads, openPrs, method } = args;
+  const merged: string[] = [];
+  for (const repo of order) {
+    const result = await step.run(`merge-${repo}`, async () => {
+      const url = openPrs[repo]!;
+      let error = "";
+      for (let attempt = 0; attempt < MERGE_TRIES; attempt++) {
+        try {
+          await mergePr(url, heads[repo]!, method);
+          error = "";
+          break;
+        } catch (err) {
+          error = err instanceof Error ? err.message : String(err);
+        }
+        const now = await prState(url).catch(() => null);
+        if (now?.merged) {
+          error = "";
+          break;
+        }
+        // GitHub said no (a 4xx): asking again won't change its mind.
+        if (/: 4\d\d /.test(error)) break;
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+      if (error) return { ok: false as const, error };
+      // The merge went in: a branch left behind is untidy, not a failure.
+      await deleteBranch(repo, branch).catch((err) => console.warn(`[${runId}] couldn't delete ${repo}/${branch}: ${err}`));
+      return { ok: true as const };
+    });
+    if (!result.ok) return { merged, failed: { repo, error: result.error.slice(0, 500) } };
+    merged.push(repo);
+  }
+  return { merged, failed: null };
+}
+
+/**
+ * Into a bulk branch: no CI runs there and no agent judges, so the orchestrator's checks are the
+ * whole gate (`bulkBlockers`), on the heads the run started on. Then a squash merge per PR, live
+ * whatever `FACTORY_MERGE_DRY_RUN` says, and the sub-ticket is done: the parent's PR into main is
+ * where Oscar reads it. Ends the run before any runner, with a `Stop`.
+ */
+async function mergeIntoBulk(args: {
+  step: Step;
+  runId: string;
+  ticket: RunContext["ticket"];
+  branch: string;
+  base: string;
+  heads: Record<string, string>;
+  openPrs: Record<string, string>;
+  prRepos: string[];
+}): Promise<Stop> {
+  const { step, runId, ticket, branch, base, heads, openPrs, prRepos } = args;
+  const held = await step.run("check-bulk-gates", async () =>
+    bulkBlockers({
+      base,
+      labels: await ticketLabels(ticket.id),
+      prs: await Promise.all(prRepos.map(async (repo) => ({ repo, state: await prState(openPrs[repo]!), judgedSha: heads[repo]! }))),
+    }),
+  );
+  const urls = Object.values(openPrs);
+  if (held.length) return stop(["Not merging into the bulk branch.", "", ...held.map((b) => `- ${b}`)].join("\n"));
+
+  const { merged, failed } = await mergeInOrder({ step, runId, branch, order: prRepos, heads, openPrs, method: "squash" });
+  const prUrls = merged.map((r) => openPrs[r]!);
+  if (failed) {
+    const text = partialText({ merged, failed, rest: prRepos.slice(merged.length + 1), urls: openPrs });
+    return { stop: { end: { status: "failed", next: "human" }, text, record: { prUrls, error: failed.error } } };
+  }
+  await step.run("close-ticket", () => closeTicket(ticket.id));
+  return { stop: { end: { status: "succeeded", next: "done" }, text: bulkMergedText(prRepos, openPrs, base), record: { prUrls: urls } } };
 }

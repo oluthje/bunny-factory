@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ticket } from "../../test/fixtures.ts";
-import { ciStopText, mergedText, notMergingText, partialText, prNote, wouldMergeText } from "./report.ts";
+import { bulkMergedText, ciStopText, mergedText, notMergingText, partialText, prNote, wouldMergeText } from "./report.ts";
 
 const api = "https://github.com/bunnyapp/api/pull/7429";
 const app = "https://github.com/bunnyapp/app/pull/3534";
@@ -77,6 +77,14 @@ describe("prNote", () => {
   it("frames the text for a PR comment, with the ticket link and the factory's marker", () => {
     expect(prNote(ticket(), "Not merging.", "run-1")).toBe(
       "Factory merge check of [REC-123](https://linear.app/bunnyinc/issue/REC-123) (run `run-1`).\n\nNot merging.\n\n<!-- oscar-factory -->",
+    );
+  });
+});
+
+describe("bulkMergedText", () => {
+  it("says the PRs went into the bulk branch, and where Oscar reviews them", () => {
+    expect(bulkMergedText(["api", "app"], urls, "factory/bulk/REC-40")).toBe(
+      "Merged [bunnyapp/api#7429](https://github.com/bunnyapp/api/pull/7429), then [bunnyapp/app#3534](https://github.com/bunnyapp/app/pull/3534) into the bulk branch `factory/bulk/REC-40`, squashed, with no per-PR review. They reach `main` with the batch's PR from REC-40, which Oscar reviews.",
     );
   });
 });
