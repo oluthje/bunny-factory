@@ -27,6 +27,7 @@ export const review: Task = {
   stack: true,
   branch: "required",
   timeLimitMinutes: null,
+  clock: null,
   prepare,
 };
 

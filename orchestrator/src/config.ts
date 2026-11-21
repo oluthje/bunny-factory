@@ -24,6 +24,9 @@ export const config = {
    */
   mergeDryRun: (process.env.FACTORY_MERGE_DRY_RUN ?? "true") !== "false",
 
+  /** The time zone clock triggers fire in, and the one a ticket the factory files is dated in. */
+  timeZone: process.env.FACTORY_TZ ?? "America/Los_Angeles",
+
   snapshot: () => required("FACTORY_SNAPSHOT"),
   claudeSecret: process.env.CLAUDE_SECRET ?? "claude-oauth-token",
   /** How long Claude may run before the factory gives up. */

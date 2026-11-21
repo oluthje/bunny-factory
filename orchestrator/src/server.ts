@@ -5,6 +5,7 @@ import http from "node:http";
 import { serve } from "inngest/node";
 import { assertCheckoutCurrent } from "./checkout.ts";
 import { config } from "./config.ts";
+import { clocks } from "./functions/clock.ts";
 import { pollLinear } from "./functions/poll-linear.ts";
 import { runCancelled } from "./functions/run-cancelled.ts";
 import { runTicket } from "./functions/run-ticket.ts";
@@ -13,7 +14,7 @@ import { inngest } from "./inngest.ts";
 
 await assertCheckoutCurrent();
 
-const functions = serve({ client: inngest, functions: [pollLinear, runTicket, runCancelled, sweepRuns] });
+const functions = serve({ client: inngest, functions: [pollLinear, runTicket, runCancelled, sweepRuns, ...clocks] });
 
 const server = http.createServer((req, res) => {
   const { pathname } = new URL(req.url ?? "/", "http://localhost");
