@@ -12,14 +12,14 @@
 import { isBulkBranch } from "../../src/bulk.ts";
 import { ciState, combineCi, type CiState } from "../../src/checks.ts";
 import { config } from "../../src/config.ts";
-import { commentOnPr, commitChecks, deleteBranch, getPrBody, mergePr, type MergeMethod, prComments, prReviews, prState, reviewThreads } from "../../src/github.ts";
+import { commentOnPr, commitChecks, deleteBranch, filesUnder, getPrBody, mergePr, type MergeMethod, prAddedFiles, prComments, prReviews, prState, reviewThreads } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
 import { countRunsSince } from "../../src/db/index.ts";
 import { blockedTickets, closeTicket, comment, ticketComments, ticketLabels } from "../../src/linear.ts";
 import { linearComment, nowUnblocked } from "../../src/logic.ts";
 import { finish, passResult, type Outcome, type Prepared, type RunContext, type Step, type Stop, type Task } from "../../src/task.ts";
 import type { RunEnd } from "../../src/transitions.ts";
-import { blockers, bulkBlockers, resolveRound, stale } from "./gates.ts";
+import { addsMigration, blockers, bulkBlockers, migrationClashes, MIGRATIONS_DIR, resolveRound, stale } from "./gates.ts";
 import { mergeOrder } from "./order.ts";
 import { promptVars, VERDICT } from "./prompt.ts";
 import { bulkMergedText, ciStopText, mergedText, notMergingText, partialText, prNote, staleText, wouldMergeText } from "./report.ts";
@@ -254,9 +254,10 @@ async function mergeInOrder(args: {
 
 /**
  * Into a bulk branch: no CI runs there and no agent judges, so the orchestrator's checks are the
- * whole gate (`bulkBlockers`), on the heads the run started on. Then a squash merge per PR, live
- * whatever `FACTORY_MERGE_DRY_RUN` says, and the sub-ticket is done: the parent's PR into main is
- * where Oscar reads it. Done frees each ticket it blocked whose blockers are now all closed. Ends the run before any runner, with a `Stop`.
+ * whole gate (`bulkBlockers`, then `migrationClashes`), on the heads the run started on. Then a
+ * squash merge per PR, live whatever `FACTORY_MERGE_DRY_RUN` says, and the sub-ticket is done: the
+ * parent's PR into main is where Oscar reads it. Done frees each ticket it blocked whose blockers
+ * are now all closed. Ends the run before any runner, with a `Stop`.
  */
 async function mergeIntoBulk(args: {
   step: Step;
@@ -281,6 +282,19 @@ async function mergeIntoBulk(args: {
   if (gate.blockers.length) return stop(["Not merging into the bulk branch.", "", ...gate.blockers.map((b) => `- ${b}`)].join("\n"));
   // Another sub-ticket merged into the bulk branch first, and this one conflicts with it now.
   if (gate.stale) return { stop: gate.stale };
+  // A migration version another sub-ticket already took: git merges it cleanly, and every run on
+  // the bulk branch after it would fail catch-up. Its own step, so check-bulk-gates keeps its shape.
+  const clashes = await step.run("check-migration-versions", async () =>
+    (
+      await Promise.all(
+        prRepos.map(async (repo) => {
+          const added = await prAddedFiles(openPrs[repo]!);
+          return addsMigration(added) ? migrationClashes(repo, added, await filesUnder(repo, base, MIGRATIONS_DIR)) : [];
+        }),
+      )
+    ).flat(),
+  );
+  if (clashes.length) return stop(["Not merging into the bulk branch.", "", ...clashes.map((c) => `- ${c}`)].join("\n"));
 
   const { merged, failed } = await mergeInOrder({ step, runId, branch, order: prRepos, heads, openPrs, method: "squash" });
   const prUrls = merged.map((r) => openPrs[r]!);

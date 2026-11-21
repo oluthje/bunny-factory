@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CiState } from "../../src/checks.ts";
 import type { PrState } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
-import { blockers, bulkBlockers, RESOLVE_ROUNDS, resolveRound, stale, type PrCheck } from "./gates.ts";
+import { addsMigration, blockers, bulkBlockers, migrationClashes, RESOLVE_ROUNDS, resolveRound, stale, type PrCheck } from "./gates.ts";
 
 const green: CiState = { state: "green", failing: [], pending: [], checks: 3 };
 const state = (over: Partial<PrState> = {}): PrState => ({
@@ -133,5 +133,31 @@ describe("resolveRound", () => {
 
   it("hands them to Oscar once the rounds since the last implement run are used up", () => {
     expect(resolveRound(RESOLVE_ROUNDS)).toEqual({ next: "human", rounds: RESOLVE_ROUNDS });
+  });
+});
+
+describe("migrationClashes", () => {
+  const dir = "db/migrate/primary";
+  const onBase = [`${dir}/20261121100000_add_key.rb`, `${dir}/20261119130000_older.rb`, "db/migrate/events/20261121100001_events_thing.rb", "db/schema.rb"];
+
+  it("finds a migration whose version the bulk branch already has in the same directory", () => {
+    expect(migrationClashes("api", [`${dir}/20261121100000_add_frozen_at.rb`, "app/models/quote.rb"], onBase)).toEqual([
+      `api: \`${dir}/20261121100000_add_frozen_at.rb\` has version 20261121100000, which \`${dir}/20261121100000_add_key.rb\` already has. Give it a new version.`,
+    ]);
+  });
+
+  it("finds two migrations with one version in the PR itself", () => {
+    expect(migrationClashes("api", [`${dir}/20261121120000_a.rb`, `${dir}/20261121120000_b.rb`], onBase)).toHaveLength(1);
+  });
+
+  it("lets through new versions, the same version in another database's directory, and the PR's own file", () => {
+    expect(
+      migrationClashes("api", [`${dir}/20261121100001_new.rb`, "db/migrate/primary/20261119130000_older.rb", "db/migrate/queue/20261121100000_q.rb"], onBase),
+    ).toEqual([]);
+  });
+
+  it("knows whether a PR adds a migration at all", () => {
+    expect(addsMigration(["db/schema.rb", "app/models/quote.rb"])).toBe(false);
+    expect(addsMigration([`${dir}/20261121100000_add_key.rb`])).toBe(true);
   });
 });

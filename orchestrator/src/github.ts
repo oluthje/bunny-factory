@@ -141,6 +141,36 @@ function parsePrUrl(url: string): { repo: string; number: number } {
   return { repo: m[1]!, number: Number(m[2]) };
 }
 
+/** The paths a PR adds, a rename's new path included. Up to GitHub's 3000 files. */
+export async function prAddedFiles(url: string): Promise<string[]> {
+  const { repo, number } = parsePrUrl(url);
+  const added: string[] = [];
+  for (let page = 1; page <= 30; page++) {
+    const files = await gh<{ filename: string; status: string }[]>(
+      "GET",
+      `/repos/${config.githubOwner}/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
+    );
+    added.push(...files.filter((f) => f.status === "added" || f.status === "renamed").map((f) => f.filename));
+    if (files.length < 100) break;
+  }
+  return added;
+}
+
+/** Every file under `dir` on `branch`, as paths from the repo's root. Empty when the directory isn't there. */
+export async function filesUnder(repo: string, branch: string, dir: string): Promise<string[]> {
+  try {
+    const tree = await gh<{ tree: { path: string; type: string }[]; truncated: boolean }>(
+      "GET",
+      `/repos/${config.githubOwner}/${repo}/git/trees/${encodeURIComponent(`${branch}:${dir}`)}?recursive=1`,
+    );
+    if (tree.truncated) throw new Error(`GitHub truncated the tree of ${repo} ${branch}:${dir}`);
+    return tree.tree.filter((e) => e.type === "blob").map((e) => `${dir}/${e.path}`);
+  } catch (err) {
+    if (err instanceof Error && /: 404 /.test(err.message)) return [];
+    throw err;
+  }
+}
+
 export async function getPrBody(url: string): Promise<string> {
   const { repo, number } = parsePrUrl(url);
   const pr = await gh<{ body: string | null }>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`);

@@ -1,6 +1,7 @@
 // The orchestrator's own checks before it merges, whatever the agent judged: run right before the
 // first merge, on what GitHub and Linear say then. `bulkBlockers` is the same for a PR into a bulk
-// branch (src/bulk.ts), which no agent judges and no CI runs on. A PR that conflicts with its base,
+// branch (src/bulk.ts), which no agent judges and no CI runs on; `migrationClashes` is one more
+// check for that path, for what CI would have caught. A PR that conflicts with its base,
 // or is behind it, isn't a blocker but `stale`: the resolve task merges the base in, up to
 // RESOLVE_ROUNDS times. Pure: it takes what index.ts fetched and does no I/O, so it is unit-tested
 // in gates.test.ts.
@@ -75,6 +76,44 @@ function mergeability(state: PrState): string | null {
   if (mergeable === null || mergeableState === "unknown") return "GitHub hasn't worked out whether it can merge.";
   if (mergeableState === "blocked") return "branch protection blocks it.";
   return null;
+}
+
+/** Where a repo keeps its Rails migrations, one directory per database below it. */
+export const MIGRATIONS_DIR = "db/migrate";
+
+/** A migration's directory and version, or null when the path isn't a migration. */
+function migration(path: string): { dir: string; version: string } | null {
+  const m = /^(db\/migrate(?:\/.+)?)\/(\d{14})_[^/]+\.rb$/.exec(path);
+  return m ? { dir: m[1]!, version: m[2]! } : null;
+}
+
+/** Whether any of the paths is a migration: only then does the base need reading. */
+export function addsMigration(paths: readonly string[]): boolean {
+  return paths.some((p) => migration(p) !== null);
+}
+
+/**
+ * Each migration the PR adds whose version another migration in the same directory already has,
+ * on the bulk branch or in the PR itself. Rails refuses both, and git merges them without a
+ * conflict, so nothing else catches them before the next run's catch-up fails. A path the bulk
+ * branch already has is the same file, not a clash.
+ */
+export function migrationClashes(repo: string, added: readonly string[], onBase: readonly string[]): string[] {
+  const taken = new Map<string, string>();
+  for (const path of onBase) {
+    const m = migration(path);
+    if (m && !added.includes(path)) taken.set(`${m.dir}/${m.version}`, path);
+  }
+  const clashes: string[] = [];
+  for (const path of added) {
+    const m = migration(path);
+    if (!m) continue;
+    const key = `${m.dir}/${m.version}`;
+    const other = taken.get(key);
+    if (other) clashes.push(`${repo}: \`${path}\` has version ${m.version}, which \`${other}\` already has. Give it a new version.`);
+    else taken.set(key, path);
+  }
+  return clashes;
 }
 
 /** Why the open PR needs its base merged in, or null when it doesn't. */
