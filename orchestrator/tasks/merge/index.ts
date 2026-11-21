@@ -11,7 +11,8 @@ import { ciState, combineCi, type CiState } from "../../src/checks.ts";
 import { config } from "../../src/config.ts";
 import { commentOnPr, commitChecks, deleteBranch, getPrBody, mergePr, type MergeMethod, prComments, prReviews, prState, reviewThreads } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
-import { closeTicket, ticketComments, ticketLabels } from "../../src/linear.ts";
+import { blockedTickets, closeTicket, comment, ticketComments, ticketLabels } from "../../src/linear.ts";
+import { linearComment, nowUnblocked } from "../../src/logic.ts";
 import { finish, passResult, type Outcome, type Prepared, type RunContext, type Step, type Stop, type Task } from "../../src/task.ts";
 import type { RunEnd } from "../../src/transitions.ts";
 import { blockers, bulkBlockers } from "./gates.ts";
@@ -226,7 +227,7 @@ async function mergeInOrder(args: {
  * Into a bulk branch: no CI runs there and no agent judges, so the orchestrator's checks are the
  * whole gate (`bulkBlockers`), on the heads the run started on. Then a squash merge per PR, live
  * whatever `FACTORY_MERGE_DRY_RUN` says, and the sub-ticket is done: the parent's PR into main is
- * where Oscar reads it. Ends the run before any runner, with a `Stop`.
+ * where Oscar reads it. Done frees each ticket it blocked whose blockers are now all closed. Ends the run before any runner, with a `Stop`.
  */
 async function mergeIntoBulk(args: {
   step: Step;
@@ -256,5 +257,17 @@ async function mergeIntoBulk(args: {
     return { stop: { end: { status: "failed", next: "human" }, text, record: { prUrls, error: failed.error } } };
   }
   await step.run("close-ticket", () => closeTicket(ticket.id));
-  return { stop: { end: { status: "succeeded", next: "done" }, text: bulkMergedText(prRepos, openPrs, base), record: { prUrls: urls } } };
+  // Done frees the tickets it blocked: a comment on each brings it back to the poller, which
+  // skipped it while it was blocked.
+  const freed = await step.run("unblock", async () => {
+    const dependents = (await blockedTickets(ticket.id)).map((d) => ({
+      ...d,
+      // Linear may not show this ticket done yet: it is.
+      blockers: d.blockers.map((b) => (b.identifier === ticket.identifier ? { ...b, state: "done" as const } : b)),
+    }));
+    const free = nowUnblocked(dependents);
+    for (const d of free) await comment(d.id, linearComment(`Unblocked: ${ticket.identifier} merged into \`${base}\` and is done.`, runId));
+    return free.map((d) => d.identifier);
+  });
+  return { stop: { end: { status: "succeeded", next: "done" }, text: [bulkMergedText(prRepos, openPrs, base), freed.length ? `Unblocked ${freed.join(", ")}.` : null].filter(Boolean).join("\n\n"), record: { prUrls: urls } } };
 }
