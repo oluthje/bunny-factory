@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceCursor,
+  blockedBy,
+  nowUnblocked,
   commentText,
   cursorAfterPoll,
   decideRuns,
@@ -280,5 +282,37 @@ describe("runFoldersToPrune", () => {
       { id: "a", at: daysAgo(4), bytes: 1 * GB },
     ];
     expect(runFoldersToPrune(folders, new Set(["busy"]), { total: 40 * GB, free: 2 * GB }, now)).toEqual(["a"]);
+  });
+});
+
+describe("blockedBy", () => {
+  it("names the blockers still open, and none that are done or cancelled", () => {
+    expect(
+      blockedBy([
+        { identifier: "REC-1", state: "open" },
+        { identifier: "REC-2", state: "done" },
+        { identifier: "REC-3", state: "cancelled" },
+      ]),
+    ).toEqual(["REC-1"]);
+    expect(blockedBy([])).toEqual([]);
+  });
+});
+
+describe("nowUnblocked", () => {
+  it("keeps only the open tickets whose every blocker is closed", () => {
+    const dependents = [
+      { id: "a", identifier: "REC-10", state: "open" as const, blockers: [{ identifier: "REC-1", state: "done" as const }] },
+      {
+        id: "b",
+        identifier: "REC-11",
+        state: "open" as const,
+        blockers: [
+          { identifier: "REC-1", state: "done" as const },
+          { identifier: "REC-2", state: "open" as const },
+        ],
+      },
+      { id: "c", identifier: "REC-12", state: "cancelled" as const, blockers: [{ identifier: "REC-1", state: "done" as const }] },
+    ];
+    expect(nowUnblocked(dependents)).toEqual([{ id: "a", identifier: "REC-10" }]);
   });
 });

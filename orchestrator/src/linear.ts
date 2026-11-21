@@ -1,7 +1,7 @@
 import { LinearClient } from "@linear/sdk";
 import { config } from "./config.ts";
 import type { TicketComment } from "./comments.ts";
-import type { Ticket } from "./logic.ts";
+import type { Linked, Ticket } from "./logic.ts";
 import { LABEL_PREFIX } from "./labels.ts";
 import type { LabelChange } from "./transitions.ts";
 
@@ -146,7 +146,7 @@ export async function ticketsWithLabel(label: string): Promise<LabelledTicket[]>
       title: i.title,
       url: i.url,
       labels: i.labels.nodes.map((l) => l.name),
-      state: i.state.type === "completed" ? ("done" as const) : i.state.type === "canceled" ? ("cancelled" as const) : ("open" as const),
+      state: stateOf(i.state.type),
     }))
     .reverse();
 }
@@ -191,4 +191,44 @@ export async function openSubTickets(ticketId: string): Promise<number> {
     { id: ticketId },
   );
   return data.issue.children.nodes.filter((c) => c.state.type !== "completed" && c.state.type !== "canceled").length;
+}
+
+/** Linear's state type as the factory sees it: completed is done, canceled is cancelled, the rest open. */
+function stateOf(type: string): Linked["state"] {
+  return type === "completed" ? "done" : type === "canceled" ? "cancelled" : "open";
+}
+
+type RelationNodes = { nodes: { type: string; issue: { identifier: string; state: { type: string } } }[] };
+const blockersOf = (inverse: RelationNodes): Linked[] =>
+  inverse.nodes.filter((r) => r.type === "blocks").map((r) => ({ identifier: r.issue.identifier, state: stateOf(r.issue.state.type) }));
+
+/** The tickets that block this one, in any state. Up to 50. */
+export async function ticketBlockers(ticketId: string): Promise<Linked[]> {
+  const data = await linear().client.request<{ issue: { inverseRelations: RelationNodes } }, { id: string }>(
+    `query($id: String!) { issue(id: $id) { inverseRelations(first: 50) { nodes { type issue { identifier state { type } } } } } }`,
+    { id: ticketId },
+  );
+  return blockersOf(data.issue.inverseRelations);
+}
+
+/** The tickets this one blocks, each with its state and every ticket that blocks it. Up to 50 of each. */
+export async function blockedTickets(ticketId: string): Promise<(Linked & { id: string; blockers: Linked[] })[]> {
+  const data = await linear().client.request<
+    {
+      issue: {
+        relations: {
+          nodes: { type: string; relatedIssue: { id: string; identifier: string; state: { type: string }; inverseRelations: RelationNodes } }[];
+        };
+      };
+    },
+    { id: string }
+  >(
+    `query($id: String!) { issue(id: $id) { relations(first: 50) { nodes { type relatedIssue {
+      id identifier state { type } inverseRelations(first: 50) { nodes { type issue { identifier state { type } } } }
+    } } } } }`,
+    { id: ticketId },
+  );
+  return data.issue.relations.nodes
+    .filter((r) => r.type === "blocks")
+    .map(({ relatedIssue: d }) => ({ id: d.id, identifier: d.identifier, state: stateOf(d.state.type), blockers: blockersOf(d.inverseRelations) }));
 }
