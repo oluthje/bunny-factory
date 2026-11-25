@@ -24,6 +24,20 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
   });
 }
 
+/**
+ * A section of a runner skill, from its `## <heading>` to the next `##` heading, without the
+ * heading: for a prompt that carries a list the skill keeps, so it lives in one place.
+ * Throws when the skill has no such section.
+ */
+export function skillSection(skill: string, heading: string): string {
+  const text = fs.readFileSync(path.join(SKILLS_DIR, skill, "SKILL.md"), "utf8");
+  const at = text.search(new RegExp(`^## ${heading}$`, "m"));
+  if (at === -1) throw new Error(`${skill}'s SKILL.md has no "## ${heading}" section`);
+  const body = text.slice(text.indexOf("\n", at) + 1);
+  const next = body.search(/^## /m);
+  return (next === -1 ? body : body.slice(0, next)).trim();
+}
+
 /** The task's prompt.md, as written: for checks that don't need it filled in. */
 export function promptTemplate(task: TaskName): string {
   return fs.readFileSync(path.join(TASKS_DIR, task, "prompt.md"), "utf8");

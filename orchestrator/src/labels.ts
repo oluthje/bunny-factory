@@ -24,7 +24,12 @@ export const CANDIDATE_LABEL = `${LABEL_PREFIX}candidate`;
  * a task: it queues nothing.
  */
 export const BULK_LABEL = `${LABEL_PREFIX}bulk`;
-export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL, BULK_LABEL];
+/**
+ * Set by the factory on every ticket where a QA run posted a defect, and never taken off: how later
+ * QA runs find the defects posted so far. A flag, not a task: it queues nothing.
+ */
+export const QA_DEFECTS_LABEL = `${LABEL_PREFIX}qa-defects`;
+export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL, BULK_LABEL, QA_DEFECTS_LABEL];
 
 /** The label that queues a run of the task. */
 export function taskLabel(task: TaskName): string {

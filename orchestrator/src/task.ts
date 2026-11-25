@@ -79,6 +79,8 @@ export type RunContext = {
   /** The run's folder on the orchestrator: bundles, artifacts and the files the run wrote. */
   localDir: string;
   timeLimitMinutes: number;
+  /** Each repo's base commit: what a run that never touches the branch tests. */
+  baseShas: Record<string, string>;
   /** Each repo that has the ticket's branch on GitHub, with its head there. */
   heads: Record<string, string>;
   /** Each repo's open PR on the branch. */

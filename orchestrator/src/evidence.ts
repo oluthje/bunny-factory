@@ -8,6 +8,11 @@ import { uploadFile } from "./linear.ts";
 import { evidenceRefs } from "./logic.ts";
 
 const CONTENT_TYPES: Record<string, string> = {
+  ".txt": "text/plain",
+  ".md": "text/plain",
+  ".log": "text/plain",
+  ".json": "application/json",
+  ".rb": "text/plain",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -45,17 +50,40 @@ export type PublishedEvidence = {
   linearMarkdown: string;
 };
 
-export async function publishEvidence(runDir: string, prBody: string): Promise<PublishedEvidence> {
+/** A video, which Linear links rather than shows inline. */
+export const isVideo = (file: string) => /\.(webm|mp4)$/i.test(file);
+/** An image, which Linear shows inline. */
+export const isImage = (file: string) => /\.(png|jpe?g|gif)$/i.test(file);
+
+/** A file uploaded to Linear: its asset URL, and the name it went up under (a `.gif` reference uploads its `.webm`). */
+export type Uploaded = { url: string; name: string };
+
+/**
+ * Uploads each named file from the run's evidence directory to Linear, once. Returns each
+ * reference's upload, without the files the run never wrote.
+ */
+export async function uploadEvidence(runDir: string, files: readonly string[]): Promise<Record<string, Uploaded>> {
   const dir = await extractEvidence(runDir);
-  const urls: Record<string, string> = {};
-  const lines: string[] = [];
-  for (const { alt, file } of evidenceRefs(prBody)) {
+  const uploads: Record<string, Uploaded> = {};
+  for (const file of new Set(files)) {
     const local = resolve(dir, file);
     if (!local) continue;
+    const name = path.basename(local);
     const ext = path.extname(local).toLowerCase();
-    const url = await uploadFile(fs.readFileSync(local), path.basename(local), CONTENT_TYPES[ext] ?? "application/octet-stream");
-    urls[file] = url;
-    lines.push(ext === ".webm" || ext === ".mp4" ? `[▶ ${alt}](${url})` : `**${alt}**\n\n![${alt}](${url})`);
+    uploads[file] = { url: await uploadFile(fs.readFileSync(local), name, CONTENT_TYPES[ext] ?? "application/octet-stream"), name };
   }
+  return uploads;
+}
+
+export async function publishEvidence(runDir: string, prBody: string): Promise<PublishedEvidence> {
+  const refs = evidenceRefs(prBody);
+  const uploads = await uploadEvidence(runDir, refs.map((r) => r.file));
+  const urls: Record<string, string> = {};
+  const lines = refs.flatMap(({ alt, file }) => {
+    const up = uploads[file];
+    if (!up) return [];
+    urls[file] = up.url;
+    return [isVideo(up.name) ? `[▶ ${alt}](${up.url})` : `**${alt}**\n\n![${alt}](${up.url})`];
+  });
   return { urls, linearMarkdown: lines.length ? `### Evidence\n\n${lines.join("\n\n")}` : "" };
 }

@@ -144,3 +144,30 @@ export function importAndPush(repo: string, bundleFile: string, branch: string):
     return git(["rev-parse", `refs/heads/${branch}`], { cwd: dir });
   });
 }
+
+/** A commit on a branch's first-parent line: a PR's merge or squash, or a direct push. */
+export type LoggedCommit = { sha: string; subject: string; body: string };
+
+/**
+ * The first-parent commits in `to` that `from` doesn't have, newest first, up to `max`: what
+ * shipping `to` over `from` would add. Null when the repo has neither branch on GitHub, or only
+ * `to` and not `from`.
+ */
+export function commitsBetween(repo: string, from: string, to: string, max: number): Promise<{ commits: LoggedCommit[]; total: number } | null> {
+  return withMirror(repo, async () => {
+    const dir = mirrorDir(repo);
+    if (!(await fetchBranch(repo, from)) || !(await fetchBranch(repo, to))) return null;
+    const range = `refs/heads/${from}..refs/heads/${to}`;
+    const total = Number(await git(["rev-list", "--count", "--first-parent", range], { cwd: dir }));
+    const log = await git(["log", "--first-parent", `--max-count=${max}`, "--format=%H%x1f%s%x1f%b%x1e", range], { cwd: dir });
+    const commits = log
+      .split("\x1e")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [sha = "", subject = "", body = ""] = entry.split("\x1f");
+        return { sha, subject, body: body.trim() };
+      });
+    return { commits, total };
+  });
+}
