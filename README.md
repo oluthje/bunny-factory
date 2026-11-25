@@ -30,6 +30,8 @@ Every push to `main` runs [.github/workflows/deploy.yml](.github/workflows/deplo
 
 ## Disk
 
+A run deletes its inputs (`in/`, a bundle of every repo, about 350 MB) once it has uploaded them to the runner; `sweep-runs` catches any run that ended before that. What a retro reads stays: the prompt, the artifacts (transcript, logs, evidence) and the bundles of new commits.
+
 `sweep-runs` deletes run folders (`/data/runs/<id>`) older than 30 days, and when under 20% of the volume is free, the oldest ones until 25% is. It never deletes a run in flight's folder, the mirrors or `factory.db`, and SQLite rows are kept. `fac status` warns when that isn't enough.
 
 ## Setting up Fly from scratch

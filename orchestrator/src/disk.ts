@@ -34,6 +34,26 @@ export async function runFolders(): Promise<RunFolder[]> {
 
 /** Deletes one run's folder. `id` is a folder name from `runFolders`, never a path. */
 export function deleteRunFolder(id: string): void {
+  fs.rmSync(runFolder(id), { recursive: true, force: true });
+}
+
+/**
+ * Deletes a run's inputs, `in/`: the repo bundles and skills tarball it uploads to the runner,
+ * about 350 MB a run and no use once uploaded. What a retro reads (prompt.md, artifacts, out/) stays.
+ * The folder keeps its mtime, so its age for pruning doesn't restart. Returns whether there was an `in/`.
+ */
+export function deleteRunInputs(id: string): boolean {
+  const dir = runFolder(id);
+  const inputs = path.join(dir, "in");
+  if (!fs.existsSync(inputs)) return false;
+  const { atime, mtime } = fs.statSync(dir);
+  fs.rmSync(inputs, { recursive: true, force: true });
+  fs.utimesSync(dir, atime, mtime);
+  return true;
+}
+
+/** The path of one run's folder. `id` is a folder name from `runFolders` or a run id, never a path. */
+function runFolder(id: string): string {
   if (id !== path.basename(id) || id === "." || id === "..") throw new Error(`Not a run folder: ${id}`);
-  fs.rmSync(path.join(runsDir(), id), { recursive: true, force: true });
+  return path.join(runsDir(), id);
 }

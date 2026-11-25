@@ -6,10 +6,12 @@
 // - A factory sandbox whose run this orchestrator has finished is deleted: a run's own delete failed.
 // - Run folders on the data volume are pruned: older than 30 days, or oldest first while the volume
 //   is short of space. Never a run in flight's, the mirrors or factory.db; SQLite rows are kept.
+// - A finished run's inputs (`in/`, the repo bundles) are deleted, for runs that ended before their
+//   own upload step deleted them. What a retro reads stays.
 // It keeps running while the factory is stopped (`fac stop`).
 // The pure decisions are `isLostRun`, `leftoverSandboxes` and `runFoldersToPrune` in logic.ts.
 import { runsOpen, runStatuses } from "../db/index.ts";
-import { deleteRunFolder, runFolders, volumeSpace } from "../disk.ts";
+import { deleteRunFolder, deleteRunInputs, runFolders, volumeSpace } from "../disk.ts";
 import { inngest } from "../inngest.ts";
 import { isLostRun, leftoverSandboxes, runFoldersToPrune, sandboxName } from "../logic.ts";
 import { deleteSandbox, listFactorySandboxes } from "../sandbox.ts";
@@ -59,6 +61,11 @@ export const sweepRuns = inngest.createFunction(
       return ids.length;
     });
 
-    return { closed: lost.map((r) => r.identifier), deleted: leftovers.map((s) => s.name), pruned };
+    const inputsDeleted = await step.run("delete-run-inputs", async () => {
+      const inFlight = new Set(runsOpen().map((r) => r.id));
+      return (await runFolders()).filter((f) => !inFlight.has(f.id) && deleteRunInputs(f.id)).length;
+    });
+
+    return { closed: lost.map((r) => r.identifier), deleted: leftovers.map((s) => s.name), pruned, inputsDeleted };
   },
 );
