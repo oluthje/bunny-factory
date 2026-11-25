@@ -11,12 +11,13 @@ import { pickUpBackstop, pickUpTickets } from "./functions/pick-up-tickets.ts";
 import { runCancelled } from "./functions/run-cancelled.ts";
 import { runTicket } from "./functions/run-ticket.ts";
 import { sweepRuns } from "./functions/sweep-runs.ts";
+import { watchSubTickets } from "./functions/watch.ts";
 import { inngest } from "./inngest.ts";
 import { linearWebhookHandler } from "./linear-webhook.ts";
 
 await assertCheckoutCurrent();
 
-const functions = serve({ client: inngest, functions: [pickUpTickets, pickUpBackstop, runTicket, runCancelled, sweepRuns, bulkBatches, ...clocks] });
+const functions = serve({ client: inngest, functions: [pickUpTickets, pickUpBackstop, runTicket, runCancelled, sweepRuns, bulkBatches, watchSubTickets, ...clocks] });
 
 const linearWebhook = linearWebhookHandler();
 

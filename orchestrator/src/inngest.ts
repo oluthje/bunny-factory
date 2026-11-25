@@ -12,3 +12,9 @@ export const RUN_STOP = "factory/run.stop";
  * it, and pick-up-tickets starts runs from it. Its data says only where it came from.
  */
 export const LINEAR_CHANGED = "factory/linear.changed";
+
+/**
+ * A sub-ticket of a ticket a task watches has changed (`Task.watch`): Linear's webhook sends it, and
+ * functions/watch.ts calls the task. Its data names the task and the parent.
+ */
+export const SUB_TICKET_CHANGED = "factory/sub-ticket.changed";

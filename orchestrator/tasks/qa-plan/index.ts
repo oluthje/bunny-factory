@@ -26,6 +26,7 @@ export const qaPlan: Task = {
   clock: null,
   onBulkParent: false,
   prepare,
+  watch: null,
 };
 
 async function prepare({ step, runId, ticket, base, timeLimitMinutes }: RunContext): Promise<Prepared> {

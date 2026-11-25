@@ -25,6 +25,7 @@ export const deepenScan: Task = {
   clock: { cron: config.deepenScanCron, ticket: clockTicket },
   onBulkParent: false,
   prepare,
+  watch: null,
 };
 
 /** The clock's throttle: no new scan while candidates pile up undecided. `fac deepen` has none. */

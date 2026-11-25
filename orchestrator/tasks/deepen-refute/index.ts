@@ -20,6 +20,7 @@ export const deepenRefute: Task = {
   clock: null,
   onBulkParent: false,
   prepare,
+  watch: null,
 };
 
 async function prepare({ step, runId, ticket, timeLimitMinutes }: RunContext): Promise<Prepared> {

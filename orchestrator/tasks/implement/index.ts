@@ -36,6 +36,7 @@ export const implement: Task = {
   clock: null,
   onBulkParent: true, // fixes the PR from a bulk parent's branch into main
   prepare,
+  watch: null,
 };
 
 async function prepare({ step, runId, ticket, branch, base, localDir, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {
