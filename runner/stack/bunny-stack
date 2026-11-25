@@ -2,8 +2,8 @@
 # The lightweight bunny stack: api, jobs, app and portal as plain processes, with no Docker.
 # Shared services (postgres, redis, maildev, caddy) come from bunny-infra.
 #
-#   bunny-stack setup              clone missing repos, install gems and node modules, rebuild
-#                                  databases ahead of the code, migrate
+#   bunny-stack setup              clone missing repos, check the snapshot fits the code, install gems
+#                                  and node modules, rebuild databases ahead of the code, migrate
 #   bunny-stack up [svc...]        setup, then start services (default: all) and wait for their ports
 #   bunny-stack down [svc...]      stop services (default: all)
 #   bunny-stack restart <svc...>   stop, then start
@@ -162,6 +162,36 @@ $(tail -n 30 "$STATE/logs/$svc.log")"
 
 infra() { sudo BUNNY_ROOT="$BUNNY_ROOT" BUNNY_STACK_DIR="$STACK_DIR" "$STACK_DIR/bunny-infra" "$@"; }
 
+# What catch-up can't install has to come with the snapshot, and the checked-out code may want
+# something else (a branch behind or ahead of the main the snapshot was built from): Ruby, Node's
+# major version, and the private git gems, which need GitHub access the runner doesn't have.
+# Dies with what differs, so the run says "rebuild the snapshot" instead of failing somewhere later.
+check_snapshot() {
+  local api=$BUNNY_ROOT/api want have name rev dirs problems=()
+  if [[ -f $api/.ruby-version ]]; then
+    want=$(tr -d '[:space:]' <"$api/.ruby-version"); want=${want#ruby-}
+    have=$(ruby -e 'print RUBY_VERSION')
+    [[ $want == "$have" ]] || problems+=("Ruby: the code wants $want, the snapshot has $have")
+  fi
+  if [[ -f $BUNNY_ROOT/app/.nvmrc ]]; then
+    want=$(tr -d '[:space:]v' <"$BUNNY_ROOT/app/.nvmrc"); want=${want%%.*}
+    have=$(node -p 'process.versions.node.split(".")[0]')
+    [[ $want == "$have" ]] || problems+=("Node: app wants $want, the snapshot has $have")
+  fi
+  # Bundler keeps a git gem in bundler/gems/<repo>-<first 12 of its revision>.
+  if [[ -f $api/Gemfile.lock ]]; then
+    while read -r name rev; do
+      dirs=("$BUNDLE_PATH"/ruby/*/bundler/gems/"$name-${rev:0:12}")
+      [[ -d ${dirs[0]} ]] || problems+=("private gem $name: the code wants ${rev:0:12}, the snapshot doesn't have it")
+    done < <(awk '/^GIT$/ { git = 1; remote = ""; next }
+                  git && $1 == "remote:" { remote = $2 }
+                  git && $1 == "revision:" { if (remote ~ /github\.com\/bunnyapp\//) { n = remote; sub(/.*\//, "", n); sub(/\.git$/, "", n); print n, $2 } git = 0 }' \
+               "$api/Gemfile.lock")
+  fi
+  ((${#problems[@]} == 0)) || die "the snapshot doesn't match this code; rebuild it (runner/build-snapshot.sh):
+$(printf '  - %s\n' "${problems[@]}")"
+}
+
 db_exists() { [[ -n $(psql -h 127.0.0.1 -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$1'") ]]; }
 
 # The api's databases, each with the folder under db/migrate holding its migrations: primary,
@@ -222,6 +252,7 @@ cmd_setup() {
     fi
   done
 
+  check_snapshot
   infra start
 
   say "api: gems"

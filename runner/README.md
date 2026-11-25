@@ -23,7 +23,7 @@ from the gitignored `.env` files and build output.
 
 ```sh
 bunny-stack up                 # first run: clone, gems, npm, db:setup + seeds; then start all
-                               # (rebuilds databases ahead of the code)
+                               # (checks the snapshot fits the code, rebuilds databases ahead of it)
 bunny-stack status
 bunny-stack logs api -f
 bunny-stack restart app
