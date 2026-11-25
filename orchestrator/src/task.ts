@@ -24,6 +24,9 @@ import { finished, nextTask, requeued, type RunEnd } from "./transitions.ts";
  *   run when no repo has it on GitHub; `read` is `required` that never pushes, so whatever the agent
  *   commits stays on the runner; `none` never fetches or checks it out: every repo is at
  *   `origin/<base>`, and nothing is pushed.
+ * - `base`: reads the branch the run builds from off the ticket (a `**Branch:**` line, say); it, or
+ *   what it returns, null takes the default: main, or a bulk parent's bulk branch (src/bulk.ts). A chosen base that no
+ *   repo has on GitHub fails the run before any runner; a repo without it builds from main.
  * - `timeLimitMinutes`: how long Claude may run; null takes CLAUDE_TIMEOUT_MINUTES.
  * - `clock`: the task's clock trigger, or null when only a label starts it.
  * - `onBulkParent`: whether it may run on a bulk parent (src/bulk.ts), whose runs work on the bulk
@@ -37,6 +40,7 @@ export type Task = {
   browser: boolean;
   stack: boolean;
   branch: "optional" | "required" | "read" | "none";
+  base: ((ticket: Ticket) => string | null) | null;
   timeLimitMinutes: number | null;
   clock: Clock | null;
   onBulkParent: boolean;
@@ -70,7 +74,7 @@ export type RunContext = {
   ticket: Ticket;
   /** The branch the run checks out and pushes: the ticket's own, or a bulk parent's bulk branch. */
   branch: string;
-  /** The branch the run builds from and its PRs target: main, or the parent's bulk branch (src/bulk.ts). */
+  /** The branch the run builds from and its PRs target: main, the parent's bulk branch (src/bulk.ts), or the task's `base`. */
   base: string;
   /** The run's folder on the orchestrator: bundles, artifacts and the files the run wrote. */
   localDir: string;

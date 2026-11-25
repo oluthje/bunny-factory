@@ -32,6 +32,7 @@ export const merge: Task = {
   browser: false,
   stack: false,
   branch: "read", // reads the PRs; anything it commits stays on the runner
+  base: null,
   timeLimitMinutes: 10,
   clock: null,
   onBulkParent: false,

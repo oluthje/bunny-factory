@@ -31,6 +31,7 @@ export const implement: Task = {
   browser: true,
   stack: true,
   branch: "optional",
+  base: null,
   timeLimitMinutes: null,
   clock: null,
   onBulkParent: true, // fixes the PR from a bulk parent's branch into main

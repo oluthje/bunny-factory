@@ -112,14 +112,27 @@ export const runTicket = inngest.createFunction(
     let sandboxId: string | null = null;
 
     try {
-      // 0. Where the run works: its base (main, or the parent's bulk branch) and its branch (the
-      // ticket's own, or a bulk parent's bulk branch). See src/bulk.ts.
-      const placement = await step.run("place-run", async () => {
+      // 0. Where the run works: its base (main, the parent's bulk branch, or the one the task chose
+      // from the ticket) and its branch (the ticket's own, or a bulk parent's bulk branch). See src/bulk.ts.
+      // `place-run-on-base`, not `place-run`: the return gained `missingBase` (coding standards, rule 9).
+      const placement = await step.run("place-run-on-base", async () => {
         const parent = await ticketParent(ticket.id);
-        const existing = await branchesOnGitHub([bulkBranch(ticket.identifier), ...(parent ? [bulkBranch(parent.identifier)] : [])]);
-        return placeRun({ ticket, parent, bulkBranchExists: (name) => existing.includes(name) });
+        const chosenBase = settings.base?.(ticket) ?? null;
+        const existing = await branchesOnGitHub([
+          bulkBranch(ticket.identifier),
+          ...(parent ? [bulkBranch(parent.identifier)] : []),
+          ...(chosenBase ? [chosenBase] : []),
+        ]);
+        const placed = placeRun({ ticket, parent, bulkBranchExists: (name) => existing.includes(name), chosenBase });
+        // Only a chosen base can be missing: the mirrors would quietly start it at main.
+        return { ...placed, missingBase: chosenBase && !existing.includes(chosenBase) ? chosenBase : null };
       });
       const { base, branch } = placement;
+      if (placement.missingBase) {
+        const text = `Not running \`${task}\`: no repo has the branch \`${placement.missingBase}\` on GitHub. Fix the ticket's branch, then add the label again.`;
+        await step.run("stop-on-missing-base", () => finish({ runId, ticketId: ticket.id, end: { status: "failed", next: "human" }, text, record: {} }));
+        return { status: "failed" as const, prUrls: [], baseShas: {} };
+      }
       if (placement.bulkParent && !settings.onBulkParent) {
         const allowed = (Object.keys(TASKS) as TaskName[]).filter((t) => TASKS[t].onBulkParent).map((t) => `\`${t}\``).join(", ");
         const text = `Not running \`${task}\`: ${ticket.identifier} is a bulk parent, a container for its sub-tickets. Only ${allowed} runs on it, to fix the PR from \`${branch}\` into \`${base}\`.`;

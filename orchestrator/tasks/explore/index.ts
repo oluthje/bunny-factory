@@ -17,6 +17,7 @@ export const explore: Task = {
   browser: true,
   stack: true,
   branch: "none",
+  base: null,
   timeLimitMinutes: 20,
   clock: null,
   onBulkParent: false,

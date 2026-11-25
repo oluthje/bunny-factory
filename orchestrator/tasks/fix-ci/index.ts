@@ -25,6 +25,7 @@ export const fixCi: Task = {
   browser: false,
   stack: true,
   branch: "required",
+  base: null,
   timeLimitMinutes: 30,
   clock: null,
   onBulkParent: true, // gates the PR from a bulk parent's branch into main, as implement's next step

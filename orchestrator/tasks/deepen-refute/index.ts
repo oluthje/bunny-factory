@@ -15,6 +15,7 @@ export const deepenRefute: Task = {
   browser: false,
   stack: false,
   branch: "none", // reads origin/<base>, main unless the ticket is in a bulk batch; nothing it commits is pushed
+  base: null,
   timeLimitMinutes: 20,
   clock: null,
   onBulkParent: false,
