@@ -65,11 +65,12 @@ describe("renderVerdict", () => {
     threaded(
       linearComment(
         renderCoverage({
-          result: result({ flows: [flow(), flow({ name: "Pay via gateway", result: "blocked", blockedBy: "third-party APIs unreachable", evidence: [] })], ...over }),
+          result: result({ flows: [flow(), flow({ name: "Pay via gateway", interface: "API", result: "blocked", blockedBy: "third-party APIs unreachable", evidence: [] })], ...over }),
           defectLinks: [],
           uploads: {},
           branch: "release/2026-11-25",
           shas: { api: "abcdef1234" },
+          scope: "UI and API",
         }),
         "run-1",
         COVERAGE_TAG,
@@ -101,6 +102,13 @@ describe("renderVerdict", () => {
     expect(text).toContain("**Blockers and Highs**\n\n- **High** [REC-201 #1](u1) Refunding twice creates two credit notes");
     expect(text).toContain("**Commits tested:** api `abcdef1`");
     expect(text).toContain("**Needs a human**\n\n- Invoice emails: third-party APIs unreachable\n- Pay via gateway (REC-201): blocked, third-party APIs unreachable");
+  });
+
+  it("puts a QA scope whose UI flows went unwalked under what needs a human", () => {
+    const coverage = lastRunCoverage([coverageComment({ flows: [flow({ result: "not-reached", evidence: [] }), flow({ name: "Quote API", interface: "API" })] })]);
+    expect(coverage?.uiGap).toBe("its one UI flow wasn't walked.");
+    const text = renderVerdict({ scopes: [{ identifier: "REC-201", title: "QA: Billing", url: "https://linear/REC-201", finished: true, coverage }], defects: [], needsHuman: [] });
+    expect(text).toContain("**Needs a human**\n\n- REC-201: UI not covered, its one UI flow wasn't walked.");
   });
 
   it("ends with a fingerprint that changes only when the verdict does", () => {

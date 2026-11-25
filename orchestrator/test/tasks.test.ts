@@ -55,9 +55,9 @@ describe("taskFromLabels", () => {
 });
 
 describe("skillsFor", () => {
-  it("ships implement the rules, the stack, evidence, implement and what it calls, code-review and pr", () => {
+  it("ships implement the rules, the stack, capture, evidence, implement and what it calls, code-review and pr", () => {
     expect(skillsFor("implement")).toEqual([
-      "factory-rules", "factory-stack", "factory-evidence", "implement", "tdd", "codebase-design",
+      "factory-rules", "factory-stack", "factory-capture", "factory-evidence", "implement", "tdd", "codebase-design",
       "code-review", "pr",
     ]);
   });
@@ -99,9 +99,9 @@ describe("TASKS", () => {
     expect(skillsFor("deepen-refute")).toEqual(["factory-rules", "codebase-design", "improve-codebase-architecture"]);
   });
 
-  it("gives qa the browser, the stack, the branch its ticket names, nothing pushed, and 60 minutes", () => {
-    expect(TASKS.qa).toMatchObject({ browser: true, stack: true, branch: "none", timeLimitMinutes: 60, onBulkParent: false, clock: null });
-    expect(skillsFor("qa")).toEqual(["factory-rules", "factory-stack"]);
+  it("gives qa the browser, the stack, the branch its ticket names, nothing pushed, and 90 minutes", () => {
+    expect(TASKS.qa).toMatchObject({ browser: true, stack: true, branch: "none", timeLimitMinutes: 90, onBulkParent: false, clock: null });
+    expect(skillsFor("qa")).toEqual(["factory-rules", "factory-stack", "factory-capture"]);
     expect(TASKS.qa.base?.(ticket({ description: "**Branch:** production\n**Area:** Billing" }))).toBe("production");
     expect(TASKS.qa.base?.(ticket({ description: "Billing." }))).toBeNull();
   });

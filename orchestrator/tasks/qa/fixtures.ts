@@ -5,6 +5,7 @@ import type { Defect, Flow, QaResult } from "./result.ts";
 
 export const flow = (over: Partial<Flow> = {}): Flow => ({
   name: "Guest checkout, card",
+  interface: "UI",
   result: "passed",
   defect: null,
   blockedBy: null,

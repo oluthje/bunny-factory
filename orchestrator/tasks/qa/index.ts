@@ -16,16 +16,16 @@ import { FINDINGS, promptVars } from "./prompt.ts";
 import { MAX_COMMITS, RELEASED, renderReleaseChanges, type RepoChanges } from "./release.ts";
 import { COVERAGE_TAG, type DefectLinks, noLongerReproduces, renderCoverage, renderDefect, stillReproduces, testedOn } from "./report.ts";
 import { parseQaResult, qaResultJsonSchema, qaRetryPrompt } from "./result.ts";
-import { branchOf } from "./scope.ts";
+import { branchOf, interfaceOf, QA_TIME_LIMIT_MINUTES } from "./scope.ts";
 
 export const qa: Task = {
-  skills: ["factory-rules", "factory-stack"],
+  skills: ["factory-rules", "factory-stack", "factory-capture"],
   docs: [],
   browser: true,
   stack: true,
   branch: "none", // tests origin/<base>; nothing it commits is pushed
   base: (ticket) => branchOf(ticket.description), // none: main
-  timeLimitMinutes: 60,
+  timeLimitMinutes: QA_TIME_LIMIT_MINUTES,
   clock: null,
   onBulkParent: false,
   prepare,
@@ -78,7 +78,7 @@ async function prepare({ step, runId, ticket, base, localDir, timeLimitMinutes, 
 
       let coverage: string | null = null;
       if (result) {
-        const evidence = [...result.flows, ...result.defects].flatMap((x) => x.evidence.map((e) => e.file));
+        const evidence = [...result.flows, ...result.defects, ...result.suspects].flatMap((x) => x.evidence.map((e) => e.file));
         const uploads = await step.run("upload-evidence", () => uploadEvidence(localDir, evidence));
 
         // A new defect gets its own comment; a known one that reproduced, a reply where it lives.
@@ -107,7 +107,7 @@ async function prepare({ step, runId, ticket, base, localDir, timeLimitMinutes, 
         }
         // Later QA runs find this ticket's defects by the flag.
         if (number > nextNumber) await step.run("flag-defects", () => applyLabels(ticket.id, { add: [QA_DEFECTS_LABEL], remove: [] }));
-        coverage = renderCoverage({ result, defectLinks, uploads, branch: base, shas: baseShas });
+        coverage = renderCoverage({ result, defectLinks, uploads, branch: base, shas: baseShas, scope: interfaceOf(ticket.description) });
       }
 
       await step.run("report", async () => {

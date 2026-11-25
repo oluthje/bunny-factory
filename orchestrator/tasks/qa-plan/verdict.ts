@@ -141,7 +141,13 @@ export function renderVerdict(args: { scopes: readonly ScopeState[]; defects: re
 
   const grave = once.filter((d) => d.severity === "Blocker" || d.severity === "High");
   const commits = [...new Set(scopes.map((s) => s.coverage!.commits))];
-  const human = [...needsHuman, ...scopes.flatMap((s) => s.coverage!.blockedFlows.map((b) => `${b.flow} (${s.identifier}): blocked, ${b.gap}`))];
+  const human = [
+    ...needsHuman,
+    ...scopes.flatMap((s) => [
+      ...(s.coverage!.uiGap ? [`${s.identifier}: UI not covered, ${s.coverage!.uiGap}`] : []),
+      ...s.coverage!.blockedFlows.map((b) => `${b.flow} (${s.identifier}): blocked, ${b.gap}`),
+    ]),
+  ];
 
   const body = [
     `**QA verdict: ${verdict}** · \`${branch}\``,

@@ -34,6 +34,9 @@ const defectSchema = z.strictObject({
 
 const flowSchema = z.strictObject({
   name: z.string().min(1).describe("The flow, in a few words, as the QA scope lists it."),
+  interface: z
+    .enum(["UI", "API"])
+    .describe("Where the flow is walked: `UI` in the browser, as a user; `API` as an API client. A flow walked in the UI and checked through the API too is `UI`."),
   result: z.enum(["passed", "defect", "blocked", "not-reached"]),
   defect: z.number().int().min(1).nullable().describe("For `defect`: which defect it hit, by its position in `defects`, from 1. Null otherwise."),
   blockedBy: z.string().nullable().describe("For `blocked`: the runner gap that stopped it, in a few words. Null otherwise."),
@@ -54,7 +57,13 @@ export const qaResultSchema = z
     flows: z.array(flowSchema).min(1).describe("Every flow, in the order of the coverage table: the QA scope's flows first, then the ones you added."),
     defects: z.array(defectSchema).describe("Every defect you reproduced, known ones included, each once."),
     suspects: z
-      .array(z.strictObject({ suspect: z.string().min(1), tried: z.string().min(1).describe("What you tried, and what happened.") }))
+      .array(
+        z.strictObject({
+          suspect: z.string().min(1),
+          tried: z.string().min(1).describe("What you tried, and what happened."),
+          evidence: evidenceSchema.describe("What you saw, as saved in the evidence directory: a screenshot or video of it in the app when a user could see it. Empty when there was nothing to see."),
+        }),
+      )
       .describe("Suspects you tried and couldn't reproduce."),
   })
   .describe("The qa run's coverage, defects and suspects, as written in its findings.");

@@ -38,6 +38,8 @@ Oscar does the partitioning: `qa-plan` proposes, he accepts, edits or drops. He 
 
 - `branch: "none"` on the named branch, no stack, no browser, 30 minutes. It reads code and the release changes.
 - **Partitions by product area**, using the release changes to decide where depth goes. Every flow belongs to exactly one QA scope.
+- **One flow, one thing to check**, marked `(UI)` or `(API)`: anything a user can do in the app is UI. Riskiest first, since the tail is what a `qa` run leaves unreached.
+- **Sized to one `qa` run**: 8 minutes a UI flow, 4 an API flow, at most 64 a QA scope (about 8 UI flows) of qa's 90 (`tasks/qa/scope.ts`). The structured pass refuses a bigger proposed one, or one with unmarked flows; an accepted one stays as Oscar accepted it. An area too big for one run is split along its screens or features.
 - **Leaves out what only a runner gap would test.** A flow that sits entirely behind one is not proposed; it goes in the comment's **Needs a human** section, which the QA verdict repeats.
 - **First run:** posts the proposals and waits on Oscar (`next: "human"`).
 - **A later run:** reads Oscar's reply to the last proposals. Its structured pass returns the accepted QA scopes; the orchestrator files each as a sub-ticket of the `qa-plan` ticket, labelled `oscar-factory:qa`. QA scopes Oscar didn't mention stay proposals. The comment lists the filed QA scopes first, a linked line each, then the ones still proposed. While any is still proposed the run waits on Oscar; once none is, it ends `next: "done"`. The loop cap (5 runs) bounds the back-and-forth.
@@ -50,9 +52,9 @@ A QA scope's description, proposed or filed:
 **Interface:** UI and API
 
 **Flows**
-1. Guest checkout with card, single plan
-2. Checkout with coupon, then plan change
-3. Create a subscription via the API, then fetch its invoice
+1. Checkout with coupon, then plan change (UI)
+2. Guest checkout with card, single plan (UI)
+3. Create a subscription via the API, then fetch its invoice (API)
 
 **Release changes in this area**
 - api#1234 "Prorate on plan change" (REC-88)
@@ -66,9 +68,9 @@ A QA scope's description, proposed or filed:
 
 ## `qa`
 
-- `branch: "none"` on the QA scope's branch, with the stack and the browser, 60 minutes. Nothing is pushed.
+- `branch: "none"` on the QA scope's branch, with the stack and the browser, 90 minutes. Nothing is pushed.
 - **Job 1, end to end: walk every flow in the QA scope**, as the user or API client would, creating the data each flow needs. This is the main job.
-  - **UI flows** in the browser.
+  - **UI flows** in the browser. When the QA scope's interface includes the UI, a flow a user can do in the app is a UI flow, with the API only for seeding and checking, and the UI flows go first: API calls are quicker, and done first they use up the time the UI needs.
   - **API flows** as an external client: create an API client with client credentials enabled (`bin/rails runner`, or Settings → API Clients in the app), exchange its id and secret at `https://bunny.bunny.internal/oauth/token`, call `/graphql` and `/api/...` with the bearer token. Reuse the token: issuance is limited to 12 a minute per client. Check behaviour against the contract: `api/schema.graphql` and the developer docs in `~/bunny/docs-developer`. The dev-only `DevAuthAsUser` header is for seeding data only, never in an API flow.
 - **Job 2, the code hunt.** Read-only subagents go through the release changes in the area for suspects, in parallel. Each suspect becomes an extra flow to try in the UI or the API, or with a spec. UI and API work stays in the main agent: there is one browser and one database.
 - **No evidence, no defect.** A suspect that never reproduces goes in the summary's folded **Suspects, not reproduced** list, not in a comment of its own.
@@ -90,7 +92,7 @@ The runner never holds the Linear key: the run writes its evidence files and a f
 | Pay with a third-party gateway | ⛔ Blocked: third-party APIs unreachable |
 | ... | ⏭ Not reached (time) |
 
-The commits tested go under the table, one SHA per repo. "Not reached" keeps a short run honest, and tells `qa-plan` its QA scopes are too big.
+When the QA scope covers the UI and the run left UI flows unwalked, a line under the head says how many: `⚠️ **UI not covered:** none of the 8 UI flows was walked.` The QA verdict lists it under **Needs a human**. The commits tested go under the table, one SHA per repo. "Not reached" keeps a short run honest, and tells `qa-plan` its QA scopes are too big.
 
 **One comment per defect:**
 
@@ -120,11 +122,13 @@ A contract mismatch (the developer docs say one thing, the API does another) is 
 
 | Result | UI | API |
 |---|---|---|
-| ✅ Passed | End-state screenshot | Transcript of the key calls |
-| ❌ Defect | Screenshot, or a video when it takes several steps | Transcript (request, status, response; secrets masked) or a failing request spec |
+| ✅ Passed | End-state screenshot | Transcript of the key calls, and a screenshot of the result in the app when the app shows it |
+| ❌ Defect | Screenshot, or a video when it takes several steps | Transcript (request, status, response; secrets masked) or a failing request spec, and a screenshot or video of it in the app |
 | ⛔ Blocked | The runner gap that blocked it | The runner gap that blocked it |
 
-Videos only for defects: one for every passing flow would eat the time budget. A failing spec is the best evidence: it becomes the red test when the defect is fixed.
+Anything wrong a user can see in the app gets a screenshot or video of it there, however it was found: a defect, and a suspect too, even one seen once. One found through the API or a spec is opened in the app and captured where it shows (a stale total after a price adjustment is a video in the quote builder, not only a transcript). Only what leaves no trace in the app goes without. A suspect's capture is linked from its line in the folded list.
+
+Screenshots are cheap, so every pass gets one; videos only for defects and suspects, since one for every passing flow would eat the time and the storage. A UI flow walked with no screenshot or video among its evidence, or its defect's, is named on a `⚠️ **No picture:**` line under the coverage head. A failing spec is the best evidence: it becomes the red test when the defect is fixed.
 
 ### Duplicates
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { branchOf, renderScope, type ScopeDescription, scopeTitle } from "./scope.ts";
+import { branchOf, interfaceOf, renderScope, type ScopeDescription, scopeTitle } from "./scope.ts";
 
 describe("branchOf", () => {
   it("reads the branch from the **Branch:** line", () => {
@@ -16,6 +16,18 @@ describe("branchOf", () => {
 
   it("ignores the word inside a sentence", () => {
     expect(branchOf("The **Branch:** line is optional.")).toBeNull();
+  });
+});
+
+describe("interfaceOf", () => {
+  it("reads whether the QA scope covers the UI, the API or both", () => {
+    expect(interfaceOf("**Branch:** production\n**Area:** Quotes\n**Interface:** UI and API\n")).toBe("UI and API");
+    expect(interfaceOf("**Interface:** UI")).toBe("UI");
+    expect(interfaceOf("**Interface:** API")).toBe("API");
+  });
+
+  it("is null when a hand-filed QA scope doesn't say", () => {
+    expect(interfaceOf("**Branch:** main\nCheck the portal.")).toBeNull();
   });
 });
 

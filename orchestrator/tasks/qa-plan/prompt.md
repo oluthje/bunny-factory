@@ -38,7 +38,11 @@ What production does that the runner can't. A flow that sits entirely behind one
 
 1. `factory-rules`: the rules for the whole run. The proposals are the run's output, so the Decisions list and any Gaps go in them.
 2. **Map the product.** From the routes, the app's and the portal's pages, `api/schema.graphql` and `docs-developer`, list the product areas and the flows in each: one end-to-end path a user or an API client takes. Read the release changes against them: which areas they touch, and how deeply.
-3. **Split by product area.** Each QA scope is one area, with every flow in it, so that every flow belongs to exactly one QA scope. Go deeper where the release changes are: more flows, or an area split in two. A QA scope should fit one 60-minute `qa` run: about 6–12 flows. Where a neighbouring flow belongs to another QA scope, say which, under **Owned by another QA scope**: that keeps parallel runs off the same ground.
+3. **Split by product area.** Each QA scope is one area, with every flow in it, so that every flow belongs to exactly one QA scope. Go deeper where the release changes are: more flows, or an area split in two. Where a neighbouring flow belongs to another QA scope, say which, under **Owned by another QA scope**: that keeps parallel runs off the same ground.
+   - **One flow, one thing to check.** A flow is one path to one end state, one you could show in a screenshot. Several inputs to the same field (0, 2.5, -5, `abc`) are one flow. Two features are two flows, even on the same screen: free months, free periods and price adjustments are three. A check repeated on different data (a coupon on monthly, quarterly and annual price lists) is one flow when each repeat takes a minute, and more when each needs its own setup.
+   - **Mark each flow** `(UI)` or `(API)` at its end. Anything a user can do in the app is `(UI)`, even when the API reaches it too: the `qa` run walks it in the browser and records what goes wrong. `(API)` is for what only an API client does, and for the API's contract itself: validation, error shapes, concurrent calls. The QA scope's interface follows from its marks.
+   - **Riskiest first.** Order each QA scope's flows by the release changes and the known defects in them: a `qa` run walks the UI flows, then the API flows, each in your order, and the tail is what goes unreached.
+   - **Size each QA scope to one run.** A `qa` run has {{qaTimeLimit}} minutes. Count {{uiMinutes}} minutes for a `(UI)` flow and {{apiMinutes}} for an `(API)` one: a QA scope's flows add up to at most {{scopeBudget}}, about {{maxUiFlows}} UI flows. The factory refuses a bigger one. Split it along its screens or features rather than cutting flows: "Quote builder: card inputs" and "Quote builder: discounts, coupons and free periods", not one "Quote builder" that half its run never reaches.
 4. **Leave out what only a runner gap would test.** List it under **Needs a human** instead.
 5. **A later run:** start from the earlier proposals and Oscar's replies above. Revise what he asked of the QA scopes not filed yet, and nothing else. Mark accepted every QA scope he accepted, now or before; leave out the ones he dropped. Keep the filed ones as they are.
 6. Write the proposals to the proposals path, a section per QA scope in number order, each in exactly this shape:
@@ -51,7 +55,8 @@ What production does that the runner can't. A flow that sits entirely behind one
 **Interface:** UI | API | UI and API
 
 **Flows**
-1. <flow>
+1. <flow> (UI)
+2. <flow> (API)
 
 **Release changes in this area**
 - api#1234 "Prorate on plan change" (REC-88)

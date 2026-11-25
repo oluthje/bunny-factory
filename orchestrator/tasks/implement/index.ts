@@ -20,6 +20,7 @@ export const implement: Task = {
   skills: [
     "factory-rules",
     "factory-stack",
+    "factory-capture", // how factory-evidence captures
     "factory-evidence",
     "implement",
     "tdd", // called by implement

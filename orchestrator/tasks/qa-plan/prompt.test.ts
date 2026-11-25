@@ -8,6 +8,8 @@ describe("qa-plan's prompt", () => {
   it("fills every placeholder", () => {
     const prompt = renderPrompt("qa-plan", promptVars({ thread: "THREAD", releaseChanges: "RELEASE", knownDefects: "KNOWN", runnerGaps: "GAPS" }));
     for (const s of ["THREAD", "RELEASE", "KNOWN", "GAPS", `Proposals path: \`${PROPOSALS}\``]) expect(prompt).toContain(s);
+    expect(prompt).toContain("A `qa` run has 90 minutes. Count 8 minutes for a `(UI)` flow and 4 for an `(API)` one: a QA scope's flows add up to at most 64, about 8 UI flows.");
+    expect(prompt).not.toMatch(/\{\{\w+\}\}/);
   });
 
   it("tells a first run to accept nothing", () => {
