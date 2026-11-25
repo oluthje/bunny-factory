@@ -15,7 +15,11 @@ describe("mergeOrder", () => {
     expect(mergeOrder(["app", "app"], ["api", "app"])).toEqual(["api", "app"]);
   });
 
+  it("puts skills-internal before the api, which pins it", () => {
+    expect(mergeOrder([], ["api", "skills-internal"])).toEqual(["skills-internal", "api"]);
+  });
+
   it("puts a repo the default doesn't know last, by name", () => {
-    expect(mergeOrder([], ["docs", "app", "components"])).toEqual(["app", "components", "docs"]);
+    expect(mergeOrder([], ["docs", "app", "integration-tests", "components"])).toEqual(["app", "components", "docs", "integration-tests"]);
   });
 });

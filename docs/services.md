@@ -10,7 +10,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 | ---------------------- | -------------------------------------------------------------------------------------------------- |
 | Ticket tracker         | Linear, workspace `bunnyinc`, team `REC`                                                           |
 | Ticket source          | Oscar adding an `oscar-factory:<task>` label, and the factory itself: `deepen-scan`'s clock and `fac deepen` file its ticket, and its run files one per strong candidate |
-| Git host               | GitHub, `bunnyapp/{api,app,portal,kong,components,docs,docs-developer}`                            |
+| Git host               | GitHub, `bunnyapp/{api,app,portal,kong,components,docs,docs-developer,skills-internal,integration-tests}`                            |
 | Orchestrator           | Inngest Cloud. Function code on Fly.io: one Node service, one machine. State in SQLite on a Fly volume, via Drizzle |
 | Runner                 | Daytona: a native, no-Docker warm snapshot built from `runner/` in this repo. One ephemeral sandbox per run |
 | Harness                | Headless Claude Code (`claude -p`) with Playwright MCP                                             |
@@ -88,7 +88,7 @@ The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has los
 ## Warm snapshot
 
 **Contents:**
-- the seven repos at a recent `main`. `components`, `docs` and `docs-developer` are only cloned: nothing is installed for them
+- the nine repos at a recent `main`. `components`, `docs`, `docs-developer`, `skills-internal` and `integration-tests` are only cloned: nothing is installed for them
 - gems, including the private ones
 - `node_modules` for `app` and `portal`
 - all three databases (`bunny_development`, `bunny_events`, `bunny_queue`), migrated and seeded with the CORS whitelist applied

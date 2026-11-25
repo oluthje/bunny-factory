@@ -14,8 +14,13 @@ export const config = {
   linearTeam: process.env.FACTORY_TEAM ?? "REC",
 
   githubOwner: process.env.GITHUB_OWNER ?? "bunnyapp",
-  /** Repos bundled into every run. Order matters only for logs. */
-  repos: (process.env.FACTORY_REPOS ?? "api,app,portal,kong").split(","),
+  /**
+   * Repos bundled into every run. Order matters only for logs. Each must be cloned in the warm
+   * snapshot (runner/Dockerfile.warm), so a deploy that adds one goes out after the snapshot rebuild.
+   */
+  repos: (
+    process.env.FACTORY_REPOS ?? "api,app,portal,kong,components,docs,docs-developer,skills-internal,integration-tests"
+  ).split(","),
   baseBranch: "main",
   draftPrs: (process.env.FACTORY_DRAFT_PRS ?? "true") === "true",
   /**

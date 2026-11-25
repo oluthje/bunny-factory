@@ -2,8 +2,11 @@
 // lands before the api field it reads breaks until the api lands. Pure: no I/O, so it is
 // unit-tested in order.test.ts.
 
-/** The usual case: the backend adds something, then the frontends use it. */
-export const DEFAULT_ORDER = ["api", "app", "portal", "kong"];
+/**
+ * The usual case: the backend adds something, then the frontends use it. `skills-internal` goes
+ * first: the api pins it by commit, so its PR must be on `main` before an api PR can bump the pin.
+ */
+export const DEFAULT_ORDER = ["skills-internal", "api", "app", "portal", "kong"];
 
 /**
  * The agent's order when it names every repo exactly once; otherwise the default, with any repo it
