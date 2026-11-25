@@ -4,6 +4,7 @@
 // It reviews and fixes its own work with `code-review`, and ends with commits and a PR body.
 // The tree of its prompt is in tasks/README.md.
 import { config } from "../../src/config.ts";
+import { branchDiff } from "../../src/git.ts";
 import { lastFinishedAt } from "../../src/db/index.ts";
 import { publishEvidence } from "../../src/evidence.ts";
 import { openOrFindPr, prComments, replyToThread, reviewThreads, setPrBody, viewerLogin } from "../../src/github.ts";
@@ -78,10 +79,13 @@ async function prepare({ step, runId, ticket, branch, base, localDir, timeLimitM
       const evidence = await step.run("publish-evidence", () => publishEvidence(localDir, files.prBody!));
       const agentBody = linkEvidence(files.prBody!, evidence.urls);
 
-      // PRs: a draft for each repo the run pushed to that has none, and the body replaced on the open ones.
-      const prs = await step.run("open-or-update-prs", async () => {
+      // PRs: a draft for each repo the run pushed to that has none, and the body replaced on the open
+      // ones. A pushed branch with no diff from the base gets no PR: an update that reverted an earlier
+      // attempt leaves one. The step has a new id: its return gained `empty` (coding standards, rule 9).
+      const prs = await step.run("open-or-update-prs-with-diff", async () => {
         const opened: string[] = [];
         const updated: string[] = [];
+        const empty: string[] = [];
         const body = prBody(ticket, agentBody, runId);
         for (const repo of config.repos) {
           const open = openPrs[repo];
@@ -89,12 +93,16 @@ async function prepare({ step, runId, ticket, branch, base, localDir, timeLimitM
             if (files.prBody!.trim()) await setPrBody(open, body);
             updated.push(open);
           } else if (pushed.includes(repo)) {
-            opened.push(await openOrFindPr(repo, branch, prTitle(ticket), body, base));
+            // The host's mirror, which the push updated.
+            if (!(await branchDiff(repo, branch, base)).trim()) empty.push(repo);
+            else opened.push(await openOrFindPr(repo, branch, prTitle(ticket), body, base));
           }
         }
-        return { opened, updated };
+        return { opened, updated, empty };
       });
       const prUrls = [...prs.opened, ...prs.updated];
+      // What the run changed: a push that left its branch with no diff, and no PR, doesn't count.
+      const changed = pushed.filter((repo) => !prs.empty.includes(repo));
 
       // Replies on the review threads the update was given, as the factory.
       const replied = await step.run("post-replies", async () => {
@@ -106,12 +114,15 @@ async function prepare({ step, runId, ticket, branch, base, localDir, timeLimitM
       });
 
       // Report back on the ticket, with the evidence inline, and hand off.
-      const status = pushed.length > 0 ? "succeeded" : timedOut ? "timed_out" : "no_changes";
+      const status = changed.length > 0 ? "succeeded" : timedOut ? "timed_out" : "no_changes";
       await step.run("report", async () => {
         const lines = [
           prs.opened.length ? `Opened ${prs.opened.map(prRef).join(", ")} as ${config.draftPrs ? "drafts" : "PRs"}.` : null,
           prs.updated.length ? `Updated ${prs.updated.map(prRef).join(", ")}.` : null,
           commits ? `Pushed ${plural(commits, "commit")}.` : null,
+          prs.empty.length
+            ? `No PR in ${prs.empty.join(", ")}: the branch has no changes from \`${base}\` there.`
+            : null,
           handles.length ? `Replied on ${replied} of ${plural(handles.length, "review thread")}.` : null,
           passError ? `⚠️ No thread replies: ${passError}` : null,
           pushed.length === 0
@@ -124,7 +135,7 @@ async function prepare({ step, runId, ticket, branch, base, localDir, timeLimitM
           evidence.linearMarkdown,
         ].filter((l): l is string => Boolean(l));
         // New commits always get a review, whether they opened the PR or updated it.
-        await finish({ runId, ticketId: ticket.id, end: { status, next: pushed.length > 0 ? "review" : "human" }, text: lines.join("\n\n"), record: { prUrls } });
+        await finish({ runId, ticketId: ticket.id, end: { status, next: changed.length > 0 ? "review" : "human" }, text: lines.join("\n\n"), record: { prUrls } });
       });
       return { status, prUrls };
     },

@@ -5,7 +5,7 @@
 // of its prompt is in tasks/README.md.
 import { questionReport } from "../../src/questions.ts";
 import { branchDiff } from "../../src/git.ts";
-import { getPrBody, markReady, postReview } from "../../src/github.ts";
+import { getPrBody, isPrOpen, markReady, postReview } from "../../src/github.ts";
 import { markForGithub } from "../../src/logic.ts";
 import { finish, passResult, plural, prRef, type Outcome, type Prepared, type RunContext, type Task } from "../../src/task.ts";
 import { promptVars, REVIEW } from "./prompt.ts";
@@ -69,6 +69,11 @@ async function prepare({ step, runId, ticket, branch, base, timeLimitMinutes, he
         const comments = extracted.ok ? extracted.comments : [];
         const body = reviewComment(ticket, text, runId);
         for (const [repo, url] of Object.entries(openPrs)) {
+          // Open when the run started, but Oscar may have closed it since.
+          if (!(await isPrOpen(url))) {
+            console.warn(`[${runId}] skipping ${url}: closed during the run`);
+            continue;
+          }
           // The hunks GitHub shows on the PR, from the host's mirror, which the push updated.
           const split = placeComments(comments, repo, diffLines(await branchDiff(repo, branch, base)));
           for (const c of split.dropped) console.warn(`[${runId}] dropping comment on ${repo}/${c.path}:${c.line}: not in the diff`);

@@ -251,11 +251,20 @@ export async function replyToThread(threadId: string, body: string): Promise<voi
   );
 }
 
-/** Marks a draft PR ready for review, once review has been through it; a no-op when it already is. */
+/** Whether the PR is still open: Oscar may close one while a run that found it open is in flight. */
+export async function isPrOpen(url: string): Promise<boolean> {
+  const { repo, number } = parsePrUrl(url);
+  return (await gh<{ state: string }>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`)).state === "open";
+}
+
+/**
+ * Marks a draft PR ready for review, once review has been through it; a no-op when it already is,
+ * or when it's closed (GitHub refuses a closed one, calling it a permission error).
+ */
 export async function markReady(url: string): Promise<void> {
   const { repo, number } = parsePrUrl(url);
-  const pr = await gh<{ node_id: string; draft: boolean }>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`);
-  if (!pr.draft) return;
+  const pr = await gh<{ node_id: string; draft: boolean; state: string }>("GET", `/repos/${config.githubOwner}/${repo}/pulls/${number}`);
+  if (!pr.draft || pr.state !== "open") return;
   await graphql(`mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }`, {
     id: pr.node_id,
   });
