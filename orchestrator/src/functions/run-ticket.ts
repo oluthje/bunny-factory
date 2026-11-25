@@ -82,8 +82,8 @@ export const runTicket = inngest.createFunction(
     id: "run-ticket",
     triggers: [{ event: RUN_REQUESTED }],
     // Not what caps runs: Inngest counts only steps that are executing, and a run spends most of
-    // its life in step.sleep, which frees the slot. The poller keeps at most `maxRuns` in flight
-    // (poll-linear.ts); this only matches it, so every run's steps can execute.
+    // its life in step.sleep, which frees the slot. pick-up-tickets keeps at most `maxRuns` in flight
+    // (pick-up-tickets.ts); this only matches it, so every run's steps can execute.
     concurrency: { limit: config.maxRuns },
     // Records a heartbeat on every call, so sweep-runs can tell a run Inngest has lost.
     middleware: [RunHeartbeat],
@@ -92,7 +92,7 @@ export const runTicket = inngest.createFunction(
     retries: 2,
     onFailure: async ({ event, step }) => {
       // Backstop: the run's own cleanup normally does this. The record is closed first, or the
-      // poller would see a run in flight and never pick the ticket up again.
+      // pick-up-tickets would see a run in flight and never pick the ticket up again.
       const { runId, ticket, task } = event.data.event.data as RunRequested;
       await step.run("delete-leftover-sandbox", () => deleteSandbox(sandboxName(ticket.identifier, runId)));
       await step.run("mark-stopped", async () => {
@@ -168,7 +168,7 @@ export const runTicket = inngest.createFunction(
       const { pass } = prepared;
 
       // 1c. `fac stop` drains: a run with no runner yet ends here, cancelled, and its ticket stays
-      // queued. Checked again here, not only by the poller, since a run may wait in Inngest's queue.
+      // queued. Checked again here, not only by pick-up-tickets, since a run may wait in Inngest's queue.
       const mayStart = await step.run("may-start-runner", () => mayStartRuns(config.poll, getFactoryState().state));
       if (!mayStart) {
         await step.run("requeue", () =>

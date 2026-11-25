@@ -45,7 +45,7 @@ export type Task = {
 
 /**
  * A clock trigger. On `cron` the engine (functions/clock.ts) asks the task for a ticket, files it
- * with the task's label, and the poller starts the run like any other: a clock never starts a
+ * with the task's label, and pick-up-tickets starts the run like any other: a clock never starts a
  * run itself.
  * - `cron`: five fields, in `config.timeZone`; null turns the clock off.
  * - `ticket`: the ticket to file now, or `skip` with the reason this firing files none (a throttle).
@@ -144,7 +144,7 @@ function handoffLine(end: RunEnd): string {
 
 /**
  * Records the run's end, reports on the ticket, then moves its labels on. The record goes first:
- * the poller only picks up a ticket with no run in flight.
+ * pick-up-tickets only picks up a ticket with no run in flight.
  *
  * A run already cancelled is left as it is: `fac stop --now` (`requeue`) or run-cancelled has
  * closed it and moved its labels, and a step still in flight when it was cancelled mustn't undo

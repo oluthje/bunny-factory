@@ -45,6 +45,6 @@ export const factoryState = sqliteTable("factory_state", {
   id: integer("id").primaryKey(),
   state: text("state", { enum: ["running", "stopped"] }).notNull(),
   changedAt: text("changed_at").notNull(),
-  /** When poll-linear last fetched tickets, for `fac status`. */
+  /** When pick-up-tickets last fetched tickets, for `fac status`. The column keeps its old name. */
   lastPolledAt: text("last_polled_at"),
 });

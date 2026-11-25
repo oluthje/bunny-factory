@@ -7,7 +7,7 @@ import { DAY_MS as DAY, DISK_LOW, factoryMode, plural, type FactoryState, type V
 export type StatusInput = {
   now: Date;
   state: FactoryState;
-  /** Whether this machine polls Linear at all: FACTORY_POLL is `on`. */
+  /** Whether this machine picks tickets up at all: FACTORY_POLL is `on`. */
   polling: boolean;
   /** The commit this image was built from, and when it was deployed; null for a local checkout. */
   deploy: { commit: string | null; at: string | null };
@@ -15,6 +15,7 @@ export type StatusInput = {
   inFlight: { ticket: string; task: string; step: string | null; createdAt: string }[];
   /** The last finished runs, newest first. */
   recent: { ticket: string; task: string; status: RunRow["status"]; createdAt: string; finishedAt: string; prUrls: string[] | null }[];
+  /** When pick-up-tickets last fetched tickets from Linear. */
   lastPolledAt: string | null;
   disk: VolumeSpace;
   /** The day the GitHub PAT expires, `YYYY-MM-DD`. */
@@ -22,8 +23,11 @@ export type StatusInput = {
   snapshot: { name: string; createdAt: string } | { error: string };
 };
 
-/** Linear unpolled for longer than this, while the factory runs, is a warning. */
-const POLL_STALE_MINUTES = 5;
+/**
+ * Linear unchecked for longer than this, while the factory runs, is a warning: the backstop
+ * (pick-up-tickets.ts) checks every 10 minutes even when no webhook arrives.
+ */
+const POLL_STALE_MINUTES = 15;
 /** A snapshot older than this should be rebuilt (docs/services.md, "Rebuild policy"). */
 const SNAPSHOT_STALE_DAYS = 7;
 /** Warn this many days before the PAT expires. */
@@ -61,12 +65,12 @@ function stateLine(input: StatusInput): string {
 function healthLines(input: StatusInput): string[] {
   const { now } = input;
   const linear = !input.polling
-    ? "not polled: FACTORY_POLL isn't on here"
+    ? "not checked: FACTORY_POLL isn't on here"
     : input.state === "stopped"
-      ? "not polled: the factory is stopped"
+      ? "not checked: the factory is stopped"
       : input.lastPolledAt === null
-        ? `${WARN}never polled`
-        : `${since(now, input.lastPolledAt) > POLL_STALE_MINUTES * 60_000 ? WARN : ""}last polled ${span(since(now, input.lastPolledAt))} ago`;
+        ? `${WARN}never checked`
+        : `${since(now, input.lastPolledAt) > POLL_STALE_MINUTES * 60_000 ? WARN : ""}last checked ${span(since(now, input.lastPolledAt))} ago`;
 
   const { total, free } = input.disk;
   const used = `${((total - free) / GB).toFixed(1)} of ${(total / GB).toFixed(1)} GB used (${Math.round(((total - free) / total) * 100)}%)`;

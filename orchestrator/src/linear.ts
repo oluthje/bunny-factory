@@ -98,7 +98,7 @@ export type FiledTicket = { id: string; identifier: string; url: string };
 
 /**
  * Files a ticket in the factory's team, assigned to the owner of LINEAR_API_KEY (Oscar), so the
- * poller picks it up when a label asks for a task. Not idempotent: call it in a step of its own.
+ * pick-up-tickets picks it up when a label asks for a task. Not idempotent: call it in a step of its own.
  */
 export async function createTicket(ticket: NewTicket): Promise<FiledTicket> {
   const [team, me, labelIds] = await Promise.all([teamId(), linear().viewer, Promise.all(ticket.labels.map(labelId))]);
@@ -179,7 +179,7 @@ export async function downloadUpload(url: string, maxBytes: number): Promise<{ d
   }
 }
 
-/** The ticket's labels now, by name: the poller's copy may be minutes old by the time a run ends. */
+/** The ticket's labels now, by name: pick-up-tickets' copy may be minutes old by the time a run ends. */
 export async function ticketLabels(ticketId: string): Promise<string[]> {
   return (await (await linear().issue(ticketId)).labels()).nodes.map((l) => l.name);
 }

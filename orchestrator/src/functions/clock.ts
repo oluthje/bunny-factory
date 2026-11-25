@@ -1,6 +1,6 @@
 // Clock triggers: one Inngest function per task that has a `clock` with a cron (see src/task.ts).
 // When it fires, the task says which ticket to file, or why to skip; the ticket gets the task's
-// label, and poll-linear starts the run like any other. Its neighbours: poll-linear.ts starts
+// label, and pick-up-tickets starts the run like any other. Its neighbours: pick-up-tickets.ts starts
 // runs, run-ticket.ts is the run.
 import { config } from "../config.ts";
 import { getFactoryState } from "../db/index.ts";

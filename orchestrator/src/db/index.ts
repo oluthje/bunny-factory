@@ -36,7 +36,7 @@ export function ticketRunInFlight(ticketId: string): boolean {
   );
 }
 
-/** How many runs, on any ticket, are queued or working. The poller keeps it at most `config.maxRuns`. */
+/** How many runs, on any ticket, are queued or working. pick-up-tickets keeps it at most `config.maxRuns`. */
 export function runsInFlight(): number {
   return db.select({ n: count() }).from(runs).where(inArray(runs.status, ["requested", "running"])).get()?.n ?? 0;
 }
@@ -76,7 +76,7 @@ export function lastFinishedAt(ticketId: string, exceptRunId: string): string | 
   );
 }
 
-/** The task a run is of, as recorded when the poller started it. */
+/** The task a run is of, as recorded when pick-up-tickets started it. */
 export function runTask(id: string): string {
   const row = db.select({ task: runs.task }).from(runs).where(eq(runs.id, id)).get();
   if (!row) throw new Error(`No run ${id}`);
@@ -130,7 +130,7 @@ export function runsFinished(n: number): RunRow[] {
   return db.select().from(runs).where(isNotNull(runs.finishedAt)).orderBy(desc(runs.finishedAt)).limit(n).all();
 }
 
-/** Whether the factory takes new runs, and when poll-linear last fetched tickets. No row means running. */
+/** Whether the factory takes new runs, and when pick-up-tickets last fetched tickets. No row means running. */
 export function getFactoryState(): { state: FactoryState; lastPolledAt: string | null } {
   const row = db.select().from(factoryState).where(eq(factoryState.id, 1)).get();
   return { state: row?.state ?? "running", lastPolledAt: row?.lastPolledAt ?? null };

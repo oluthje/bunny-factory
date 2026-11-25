@@ -1,6 +1,6 @@
 // Every 5 minutes: the backstop for runs Inngest has lost, such as when the Inngest dev server
 // restarts mid-run. A lost run never reaches its own cleanup, onFailure or run-cancelled, so it
-// would stay in flight forever, holding one of the poller's `maxRuns` slots and its sandbox.
+// would stay in flight forever, holding one of pick-up-tickets' `maxRuns` slots and its sandbox.
 // - A run in flight whose heartbeat (heartbeat.ts) is older than LOST_AFTER_MINUTES is closed as
 //   failed: its sandbox deleted, the ticket told, and its labels moved on to human-needed.
 // - A factory sandbox whose run this orchestrator has finished is deleted: a run's own delete failed.

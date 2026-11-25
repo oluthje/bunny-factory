@@ -308,7 +308,7 @@ async function mergeIntoBulk(args: {
     return { stop: { end: { status: "failed", next: "human" }, text, record: { prUrls, error: failed.error } } };
   }
   await step.run("close-ticket", () => closeTicket(ticket.id));
-  // Done frees the tickets it blocked: a comment on each brings it back to the poller, which
+  // Done frees the tickets it blocked: a comment on each brings it back to pick-up-tickets, which
   // skipped it while it was blocked.
   const freed = await step.run("unblock", async () => {
     const dependents = (await blockedTickets(ticket.id)).map((d) => ({

@@ -62,7 +62,7 @@ describe("cursorAfterPoll", () => {
   const waiting = ticket({ id: "b", updatedAt: "2026-11-18T11:00:00.000Z" });
   const newer = ticket({ id: "c", updatedAt: "2026-11-18T12:00:00.000Z" });
 
-  it("stops short of the ticket left waiting, so the next poll fetches it again", () => {
+  it("stops short of the ticket left waiting, so the next pass fetches it again", () => {
     expect(cursorAfterPoll("2026-11-18T09:00:00.000Z", [older, waiting, newer], waiting)).toBe(older.updatedAt);
   });
 
@@ -134,7 +134,7 @@ describe("parseChangedRepos", () => {
 });
 
 describe("Linear text", () => {
-  it("marks factory comments so pollers can skip them", () => {
+  it("marks factory comments so the factory can skip them", () => {
     const body = linearComment("Opened PRs", "run-1");
     expect(isFactoryComment(body)).toBe(true);
     expect(isFactoryComment("A human comment")).toBe(false);

@@ -13,7 +13,7 @@ export type Ticket = {
 
 export type ChangedRepo = { repo: string; commits: number };
 
-/** Every Linear comment the factory posts carries this marker, so pollers can skip them. */
+/** Every Linear comment the factory posts carries this marker, so the factory can skip them when it reads comments back. */
 export const COMMENT_MARKER = "🏭 oscar-factory";
 
 /**
@@ -31,7 +31,7 @@ export function isFactoryGithubBody(body: string): boolean {
   return body.includes(GITHUB_MARKER) || /(?:Opened|Posted) by Oscar's factory/.test(body);
 }
 
-/** Tickets on this page the poller may start a run on, without duplicates. `busy` holds a ticket back. */
+/** Tickets on this page pick-up-tickets may start a run on, without duplicates. `busy` holds a ticket back. */
 export function selectNewTickets(issues: Ticket[], busy: (ticket: Ticket) => boolean): Ticket[] {
   const seen = new Set<string>();
   return issues.filter((t) => {
@@ -47,8 +47,8 @@ export function advanceCursor(prev: string | null, issues: Ticket[]): string | n
 }
 
 /**
- * The cursor after a poll that left `waiting` (the oldest ticket it couldn't start) for later: it
- * stops short of that ticket, so the next poll fetches it again. With nothing waiting, `advanceCursor`.
+ * The cursor after a pickup pass that left `waiting` (the oldest ticket it couldn't start) for
+ * later: it stops short of that ticket, so the next pass fetches it again. With nothing waiting, `advanceCursor`.
  */
 export function cursorAfterPoll(prev: string | null, issues: Ticket[], waiting: Ticket | null): string | null {
   return advanceCursor(prev, waiting ? issues.filter((t) => t.updatedAt < waiting.updatedAt) : issues);
@@ -57,14 +57,14 @@ export function cursorAfterPoll(prev: string | null, issues: Ticket[], waiting: 
 /** A ticket on the other end of a "blocks" relation, with its state as Linear's state type says. */
 export type Linked = { identifier: string; state: "open" | "done" | "cancelled" };
 
-/** The blockers still open: a ticket with any waits, and the poller starts no run on it. */
+/** The blockers still open: a ticket with any waits, and pick-up-tickets starts no run on it. */
 export function blockedBy(blockers: readonly Linked[]): string[] {
   return blockers.filter((b) => b.state === "open").map((b) => b.identifier);
 }
 
 /**
  * Of the tickets a just-closed ticket blocks, those it set free: still open, and every blocker
- * closed. Each gets a comment, which brings it back to the poller.
+ * closed. Each gets a comment, which brings it back to pick-up-tickets.
  */
 export function nowUnblocked(dependents: readonly (Linked & { id: string; blockers: readonly Linked[] })[]): { id: string; identifier: string }[] {
   return dependents.filter((d) => d.state === "open" && blockedBy(d.blockers).length === 0).map(({ id, identifier }) => ({ id, identifier }));

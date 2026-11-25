@@ -60,5 +60,10 @@ export const config = {
 
   ghToken: () => required("GH_TOKEN"),
   linearApiKey: () => required("LINEAR_API_KEY"),
+  /**
+   * The signing secret of the Linear webhook that calls /webhooks/linear (src/linear-webhook.ts).
+   * Unset, the endpoint answers 404 and only the backstop picks tickets up.
+   */
+  linearWebhookSecret: process.env.LINEAR_WEBHOOK_SECRET || null,
   daytonaApiKey: () => required("DAYTONA_API_KEY"),
 };

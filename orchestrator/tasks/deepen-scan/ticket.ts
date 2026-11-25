@@ -1,5 +1,5 @@
 // The ticket a deepen-scan trigger files, and the clock's throttle. The clock (index.ts) and
-// `fac deepen` (scripts/factory.ts) both file this ticket; the poller then starts the run from its
+// `fac deepen` (scripts/factory.ts) both file this ticket; pick-up-tickets then starts the run from its
 // label. Pure: no I/O, so it is unit-tested in ticket.test.ts.
 import { HUMAN_NEEDED_LABEL, taskLabel } from "../../src/labels.ts";
 

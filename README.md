@@ -2,7 +2,7 @@
 
 A software factory for Bunny: agents that turn tickets, PRs and schedules into merged code. The design is in [docs/services.md](docs/services.md); the vocabulary is in [docs/glossary.md](docs/glossary.md).
 
-The orchestrator runs on Fly.io as the app `oscar-bunny-factory`: one always-on machine, with a 40 GB volume at `/data` holding `factory.db`, the git mirrors and the run folders. The laptop never starts runs: only a machine with the secret `FACTORY_POLL=on` does, and only Fly has it. Local work means tests (`cd orchestrator && npm test`).
+The orchestrator runs on Fly.io as the app `oscar-bunny-factory`: one always-on machine, with a 40 GB volume at `/data` holding `factory.db`, the git mirrors and the run folders. The laptop never starts runs: only a machine with the secret `FACTORY_POLL=on` does, and only Fly has it. Linear's webhook calls the Fly machine at `/webhooks/linear`, signed with `LINEAR_WEBHOOK_SECRET`. Local work means tests (`cd orchestrator && npm test`).
 
 ## The `fac` CLI
 
@@ -16,11 +16,11 @@ Each command runs `orchestrator/scripts/factory.ts` inside the machine over `fly
 
 | Command | What it does |
 | --- | --- |
-| `fac status` | One screen: the state (running, draining with the runs left, or stopped) and the deployed commit; the runs in flight with ticket, task, current step and time elapsed, out of `FACTORY_MAX_RUNS`; the last 10 finished runs with outcome, duration and PR; and health: when Linear was last polled, disk used, days until the GitHub PAT expires, and the snapshot's age. `⚠` marks anything to act on. |
+| `fac status` | One screen: the state (running, draining with the runs left, or stopped) and the deployed commit; the runs in flight with ticket, task, current step and time elapsed, out of `FACTORY_MAX_RUNS`; the last 10 finished runs with outcome, duration and PR; and health: when Linear was last checked, disk used, days until the GitHub PAT expires, and the snapshot's age. `⚠` marks anything to act on. |
 | `fac stop` | Drains. No new run starts. A queued run with no runner yet ends `cancelled`, keeps its task label, and doesn't count toward the loop cap. Runs that already have a runner finish. |
 | `fac stop --now` | Stops at once: every run in flight is cancelled, its runner deleted, and its ticket's task label put back, so it runs again after `start`. |
-| `fac start` | New runs start again on the next poll. Tickets labelled while the factory was stopped are picked up then. |
-| `fac deepen [direction]` | Files a `deepen-scan` ticket now and prints its URL; the scan starts on the next poll. The direction says where to look (`fac deepen billing in api`), in letters, digits and `. , / _ -`; without one the commit history's hot spots choose. The same ticket is filed by the clock when `FACTORY_DEEPEN_SCAN_CRON` is set: `fly secrets set FACTORY_DEEPEN_SCAN_CRON='0 7 * * 1,4' -a oscar-bunny-factory` is Mondays and Thursdays at 07:00 California time (`FACTORY_TZ`). The clock holds back while 3 candidates wait undecided; `fac deepen` doesn't. See [orchestrator/tasks/README.md](orchestrator/tasks/README.md#deepen-scan). |
+| `fac start` | New runs start again. It checks Linear at once, so tickets labelled while the factory was stopped start then. |
+| `fac deepen [direction]` | Files a `deepen-scan` ticket now and prints its URL; the scan starts within seconds, once Linear's webhook arrives. The direction says where to look (`fac deepen billing in api`), in letters, digits and `. , / _ -`; without one the commit history's hot spots choose. The same ticket is filed by the clock when `FACTORY_DEEPEN_SCAN_CRON` is set: `fly secrets set FACTORY_DEEPEN_SCAN_CRON='0 7 * * 1,4' -a oscar-bunny-factory` is Mondays and Thursdays at 07:00 California time (`FACTORY_TZ`). The clock holds back while 3 candidates wait undecided; `fac deepen` doesn't. See [orchestrator/tasks/README.md](orchestrator/tasks/README.md#deepen-scan). |
 
 The state is a row in `factory.db`, so it survives deploys and restarts. `sweep-runs` keeps running while the factory is stopped. For logs, use `fly logs -a oscar-bunny-factory` and the Inngest dashboard.
 

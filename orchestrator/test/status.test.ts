@@ -67,12 +67,12 @@ describe("renderStatus", () => {
     expect(row).toContain("https://github.com/bunnyapp/app/pull/12");
   });
 
-  it("warns when Linear hasn't been polled for over 5 minutes", () => {
-    expect(lineWith(renderStatus(input({ lastPolledAt: ago(4) })), "Linear")).not.toContain("⚠");
-    expect(lineWith(renderStatus(input({ lastPolledAt: ago(6) })), "Linear")).toContain("⚠");
+  it("warns when Linear hasn't been checked for over 15 minutes, past the 10-minute backstop", () => {
+    expect(lineWith(renderStatus(input({ lastPolledAt: ago(14) })), "Linear")).not.toContain("⚠");
+    expect(lineWith(renderStatus(input({ lastPolledAt: ago(16) })), "Linear")).toContain("⚠");
   });
 
-  it("doesn't warn about polling while the factory is stopped, since it isn't meant to poll", () => {
+  it("doesn't warn about checking Linear while the factory is stopped, since it isn't meant to", () => {
     const line = lineWith(renderStatus(input({ state: "stopped", lastPolledAt: ago(600) })), "Linear");
     expect(line).not.toContain("⚠");
     expect(line).toContain("stopped");

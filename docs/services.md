@@ -36,19 +36,21 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 8. **GitHub events are polled.** You don't have admin rights on `api` or `kong`, so you can't add webhooks there.
    - An Inngest cron runs every 2–5 minutes and emits events such as `github/pr.review_submitted`.
    - GitHub-triggered runs stay switched off until Linear-triggered runs have earned trust.
-9. **Linear events are polled.** You are not a workspace admin, so you can't add webhooks.
-   - An Inngest cron runs every 1–2 minutes on `updatedAt` cursors.
+9. **Linear events arrive by webhook.** A workspace admin gave the factory webhook access.
+   - A Linear webhook on the team, for issues and comments, calls `/webhooks/linear` on Fly. The orchestrator checks its signature with `LINEAR_WEBHOOK_SECRET` and sends Inngest a `factory/linear.changed` event (`orchestrator/src/linear-webhook.ts`).
+   - That event runs **`pick-up-tickets`**, debounced to one pass 5 seconds after the last change in a burst. The webhook only says when to look: each pass fetches every opted-in ticket changed since its `updatedAt` cursor, so a missed delivery loses nothing.
+   - A backstop cron sends the same event every 10 minutes, for deliveries Linear dropped or that arrived mid-deploy. Without `LINEAR_WEBHOOK_SECRET` the endpoint answers 404 and the backstop alone picks tickets up.
    - A ticket opts in only when it has an **`oscar-factory:<task>` label** (`oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:deepen-scan` or `oscar-factory:deepen-refute`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
    - **The labels are the ticket's state**, and `orchestrator/src/transitions.ts` is the one place that changes them:
-     - **Pickup.** The poller adds **`oscar-factory:in-progress`** and leaves the task label on, so Linear shows which stage each ticket is in. While the run works, the poller doesn't start another on the ticket.
+     - **Pickup.** `pick-up-tickets` adds **`oscar-factory:in-progress`** and leaves the task label on, so Linear shows which stage each ticket is in. While the run works, it doesn't start another on the ticket.
      - **A run ends.** The factory removes in-progress and the task label. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. The chain: an `explore` run with an easy-call verdict hands off to `oscar-factory:implement`, an `implement` run that pushed commits hands off to `oscar-factory:review`, and a `review` run that posted on a PR hands off to `oscar-factory:merge`. A `merge` run that merged ends the chain with no factory label at all.
-     - **The poller is the only thing that starts runs.** A ticket with a run queued or working waits, and the run's end brings it back.
-     - **At most `FACTORY_MAX_RUNS` runs in flight (default 3), held by the poller.** Each poll fills the free slots, oldest ticket first; the rest keep their task label and wait in Linear. A ticket still has one run at a time. Inngest's concurrency limit can't do this: it counts only executing steps, and a run's `step.sleep` waits free the slot. Runs share the orchestrator's git mirrors, so each repo's mirror takes one operation at a time.
-     - **Loop cap:** 5 runs of one task per ticket. Past it, the poller refuses the run and the ticket waits on Oscar.
-     - The poller ignores in-progress and human-needed when choosing a task, and the flag labels: **`oscar-factory:no-auto-merge`**, which only Oscar sets (the factory never merges that ticket's PRs), and **`oscar-factory:candidate`**, which the factory leaves for good on every ticket it files for a candidate.
-   - Every factory comment carries a marker, so the pollers skip the factory's own comments.
+     - **`pick-up-tickets` is the only thing that starts runs.** A ticket with a run queued or working waits, and the run's end brings it back.
+     - **At most `FACTORY_MAX_RUNS` runs in flight (default 3), held by `pick-up-tickets`.** Each pass fills the free slots, oldest ticket first; the rest keep their task label and wait in Linear. A run's end changes its ticket's labels, and that change's webhook starts the next pass, which picks up the oldest waiting ticket. A ticket still has one run at a time. Inngest's concurrency limit can't do this: it counts only executing steps, and a run's `step.sleep` waits free the slot. Runs share the orchestrator's git mirrors, so each repo's mirror takes one operation at a time.
+     - **Loop cap:** 5 runs of one task per ticket. Past it, `pick-up-tickets` refuses the run and the ticket waits on Oscar.
+     - `pick-up-tickets` ignores in-progress and human-needed when choosing a task, and the flag labels: **`oscar-factory:no-auto-merge`**, which only Oscar sets (the factory never merges that ticket's PRs), and **`oscar-factory:candidate`**, which the factory leaves for good on every ticket it files for a candidate.
+   - Every factory comment carries a marker, so the factory skips its own comments when it reads them back.
 10. **The factory's state lives in SQLite on a Fly volume**, with one machine. It holds:
-    - the poll cursors and last-seen PR state
+    - the Linear cursor and last-seen PR state
     - links from ticket to branch to PR to runs, for loop caps
     - snapshot metadata
     - run records
@@ -75,13 +77,13 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 8. Fly pushes the branch and opens or updates the PR as you, then posts a marked comment with screenshots to Linear.
 9. Fly deletes the sandbox.
 
-The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has lost, for example when the Inngest dev server restarts mid-run, which drops its in-memory state. A lost run never reaches its own cleanup, so it would hold one of the poller's `FACTORY_MAX_RUNS` slots forever.
+The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has lost, for example when the Inngest dev server restarts mid-run, which drops its in-memory state. A lost run never reaches its own cleanup, so it would hold one of `pick-up-tickets`' `FACTORY_MAX_RUNS` slots forever.
 - Every call Inngest makes to a run records a heartbeat on the run's row. If a run in flight has no heartbeat for 30 minutes, the sweeper deletes its sandbox and closes the run as failed, and the ticket goes to `oscar-factory:human-needed`.
 - It also deletes any factory sandbox whose run has finished. It leaves alone sandboxes of runs it doesn't know, since another orchestrator may share the Daytona account.
 - It doesn't collect artifacts from these sandboxes.
 - It prunes run folders on the volume (see _Observability and retention_), and keeps running while the factory is stopped.
 
-**Starting and stopping.** A `factory_state` row in SQLite says whether the factory takes new runs; `fac stop` and `fac start` set it (the root `README.md` documents the CLI). The poller checks it every tick, and each run checks it again just before creating its sandbox. A machine starts runs only when the state allows it and its `FACTORY_POLL` secret is `on`, which only Fly has. A run the factory stops itself, by draining or by `stop --now`, ends `cancelled`, keeps its task label, and doesn't count toward the loop cap.
+**Starting and stopping.** A `factory_state` row in SQLite says whether the factory takes new runs; `fac stop` and `fac start` set it (the root `README.md` documents the CLI). `pick-up-tickets` checks it every pass, and `fac start` sends a pass at once, and each run checks it again just before creating its sandbox. A machine starts runs only when the state allows it and its `FACTORY_POLL` secret is `on`, which only Fly has. A run the factory stops itself, by draining or by `stop --now`, ends `cancelled`, keeps its task label, and doesn't count toward the loop cap.
 
 **Deploys.** Every push to `main` runs the checks and deploys to Fly with GitHub Actions, then resyncs Inngest Cloud. A deploy goes out with runs in flight, and Inngest retries the step the restart cut off, so the steps a restart may cut off (creating the sandbox, uploading, starting Claude, pushing) are safe to run twice.
 

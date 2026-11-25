@@ -3,18 +3,19 @@
 //
 //   node scripts/factory.ts status | start | stop | stop --now | deepen [direction]
 //
-// - `start`: new runs start again (poll-linear and run-ticket check the state, factory_state).
+// - `start`: new runs start again (pick-up-tickets and run-ticket check the state, factory_state),
+//   and Linear is checked at once for tickets labelled while it was stopped.
 // - `stop`: drains. No new run starts; a queued run with no runner yet ends cancelled and keeps its
 //   task label (run-ticket, `may-start-runner`); runs that have a runner finish.
 // - `stop --now`: also cancels every run in flight: its record closed, its Inngest run cancelled,
 //   its runner deleted, and its ticket's task label put back (task.ts, `requeue`).
 // - `deepen`: files a deepen-scan ticket, the one its clock files (tasks/deepen-scan/ticket.ts), with
-//   the rest of the line as the direction to look in. The poller starts the run from its label.
+//   the rest of the line as the direction to look in. pick-up-tickets starts the run from its label.
 // The screen `status` prints is rendered by src/status.ts.
 import { config } from "../src/config.ts";
 import { closeIfOpen, getFactoryState, runsFinished, runsOpen, setFactoryState } from "../src/db/index.ts";
 import { volumeSpace } from "../src/disk.ts";
-import { inngest, RUN_STOP } from "../src/inngest.ts";
+import { inngest, LINEAR_CHANGED, RUN_STOP } from "../src/inngest.ts";
 import { taskLabel } from "../src/labels.ts";
 import { createTicket } from "../src/linear.ts";
 import { plural, sandboxName } from "../src/logic.ts";
@@ -89,7 +90,7 @@ async function deepen(direction: string): Promise<void> {
   console.log(`Filed ${filed.identifier}: ${filed.url}`);
   const { state } = getFactoryState();
   if (config.poll !== "on" || state !== "running") console.log("⚠ The factory isn't starting runs now: the scan starts after `fac start`.");
-  else console.log("The scan starts on the next poll.");
+  else console.log("The scan starts in a few seconds, once Linear's webhook arrives.");
 }
 
 const [command, ...flags] = process.argv.slice(2);
@@ -101,7 +102,8 @@ if (command === "status" && flags.length === 0) {
   await deepen(flags.join(" "));
 } else if (command === "start" && flags.length === 0) {
   setFactoryState("running");
-  console.log("Started: new runs start on the next poll.");
+  await inngest.send({ name: LINEAR_CHANGED, data: { source: "fac start" } });
+  console.log("Started: tickets labelled while the factory was stopped start now.");
   if (config.poll !== "on") console.log("⚠ FACTORY_POLL isn't `on` on this machine, so it still starts none.");
 } else if (command === "stop" && (flags.length === 0 || immediate)) {
   setFactoryState("stopped");
