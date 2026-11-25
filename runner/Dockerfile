@@ -1,12 +1,14 @@
 # Base snapshot for one-sandbox-per-ticket agents, running the lightweight bunny stack
 # natively (no Docker-in-Docker): Ruby, Node, postgres, redis, maildev and caddy, plus gh,
-# Claude Code and Chromium. Repos are cloned per sandbox by `bunny-stack setup`, not baked in.
+# Claude Code, Chromium and PrinceXML. Repos are cloned per sandbox by `bunny-stack setup`,
+# not baked in.
 FROM ubuntu:24.04
 
 ARG RUBY_VERSION=3.4.9
 ARG PG_VERSION=18
 ARG CADDY_VERSION=2.11.4
 ARG MAILDEV_VERSION=2.2.1
+ARG PRINCE_VERSION=16
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Base tools, Ruby build deps (with jemalloc for a smaller Rails footprint) and the native libs
@@ -41,6 +43,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
  && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/* \
  && npm install -g "maildev@${MAILDEV_VERSION}" && npm cache clean --force
+
+# PrinceXML for the api's PDFs (it runs `which prince`), with the font packages api/Dockerfile
+# installs. The licence and the api's own fonts come from the api repo in Dockerfile.warm.
+RUN curl -fsSL -o /tmp/prince.deb \
+      "https://www.princexml.com/download/prince_${PRINCE_VERSION}-1_ubuntu24.04_$(dpkg --print-architecture).deb" \
+ && apt-get update && apt-get install -y --no-install-recommends \
+      /tmp/prince.deb fontconfig fonts-dejavu fonts-freefont-ttf \
+ && rm -rf /tmp/prince.deb /var/lib/apt/lists/*
 
 # Caddy, in place of kong.
 RUN arch="$(dpkg --print-architecture)" \

@@ -32,6 +32,13 @@ RUN --mount=type=secret,id=gh_token,mode=0444,required=true \
 USER root
 RUN bv=$(awk '/^BUNDLED WITH/{getline; print $1}' /home/daytona/bunny/api/Gemfile.lock) \
  && gem install -N bundler -v "$bv"
+
+# PrinceXML's licence and the api's PDF fonts. The .deb reads the licence from /usr/lib/prince,
+# not the /usr/local/lib/prince that api/Dockerfile's tarball install uses.
+RUN install -D -m 0644 /home/daytona/bunny/api/license.dat /usr/lib/prince/license/license.dat \
+ && mkdir -p /usr/share/fonts/truetype/custom \
+ && cp -r /home/daytona/bunny/api/public/fonts/. /usr/share/fonts/truetype/custom/ \
+ && fc-cache -f
 USER daytona
 
 # Gems, including the private git gems (filter_parser, operationable, skills-internal) and
