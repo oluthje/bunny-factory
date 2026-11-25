@@ -1,7 +1,7 @@
 // `qa-plan` splits QA of a branch, named by its ticket's `**Branch:**` line, into QA scopes, one
 // product area each, reading code only. A first run proposes them and waits on Oscar; a later run
 // revises them as his replies ask, and the factory files each one he accepted as a sub-ticket
-// labelled `oscar-factory:qa`, which starts its run. It watches the QA scopes it filed: once every
+// labelled `oscar-factory:qa`, which starts its run. It waits on Oscar while any is still proposed. It watches the QA scopes it filed: once every
 // one has finished, it posts the QA verdict on its ticket, and again whenever the verdict changes.
 // The tree of its prompt is in tasks/README.md; the design is docs/qa-design.md.
 import { config } from "../../src/config.ts";
@@ -17,7 +17,7 @@ import { defectTicketOf } from "../qa/defects.ts";
 import { branchOf, scopeTitle } from "../qa/scope.ts";
 import { type Counted, fingerprintOf, knownCounted, lastRunCoverage, perScope, postedDefects, renderVerdict, type ScopeState, VERDICT_TAG } from "./verdict.ts";
 import { PROPOSALS, promptVars, renderThread } from "./prompt.ts";
-import { type Filed, filedByArea, needsHumanOf, oscarReplied, parseProposals, PROPOSALS_TAG, proposalsJsonSchema, proposalsRetryPrompt, renderProposals, scopeDescription, toFile } from "./proposals.ts";
+import { anyProposed, type Filed, filedByArea, needsHumanOf, oscarReplied, parseProposals, PROPOSALS_TAG, proposalsJsonSchema, proposalsRetryPrompt, renderProposals, scopeDescription, toFile } from "./proposals.ts";
 
 export const qaPlan: Task = {
   skills: ["factory-rules"],
@@ -115,6 +115,8 @@ async function prepare({ step, runId, ticket, base, timeLimitMinutes }: RunConte
       const status = timedOut ? "timed_out" : proposals ? "succeeded" : "failed";
 
       let text: string;
+      // Once every QA scope is filed, nothing waits on Oscar: the QA verdict follows on its own.
+      let next: "human" | "done" = "human";
       if (proposals && !timedOut) {
         // What's filed already, read again: Oscar may have filed or cancelled one meanwhile. A filed
         // QA scope, cancelled or not, is never filed again.
@@ -131,6 +133,7 @@ async function prepare({ step, runId, ticket, base, timeLimitMinutes }: RunConte
         // The QA verdict finds the release by its flag.
         if (Object.keys(filed).length) await step.run("flag-release", () => applyLabels(ticket.id, { add: [QA_RELEASE_LABEL], remove: [] }));
         text = renderProposals(proposals, base, filed, written);
+        if (!anyProposed(proposals, filed)) next = "done";
       } else {
         const why = !written ? "without writing proposals" : !proposals ? `without readable proposals (${extracted && !extracted.ok ? extracted.error : "none"})` : "";
         const head = timedOut ? `Timed out after ${timeLimitMinutes} minutes${why ? ` ${why}` : ""}. Nothing was filed.` : `Finished ${why}. Nothing was filed.`;
@@ -141,7 +144,7 @@ async function prepare({ step, runId, ticket, base, timeLimitMinutes }: RunConte
         finish({
           runId,
           ticketId: ticket.id,
-          end: { status, next: "human" },
+          end: { status, next },
           text,
           record: proposals ? {} : { error: !written ? "The agent wrote no proposals." : "No readable proposals." },
           // Only real proposals are tagged: a failure note must not hide the last ones.

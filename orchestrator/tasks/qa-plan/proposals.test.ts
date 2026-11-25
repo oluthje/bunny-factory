@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { linearComment } from "../../src/logic.ts";
 import { oscar } from "../../test/fixtures.ts";
-import { filedByArea, latestProposals, needsHumanOf, oscarReplied, parseProposals, PROPOSALS_TAG, renderProposals, scopeDescription, toFile, type Proposals, type Scope } from "./proposals.ts";
+import { anyProposed, filedByArea, latestProposals, needsHumanOf, oscarReplied, parseProposals, PROPOSALS_TAG, renderProposals, scopeDescription, toFile, type Filed, type Proposals, type Scope } from "./proposals.ts";
 
 const scope = (over: Partial<Scope> = {}): Scope => ({
   number: 1,
@@ -69,18 +69,41 @@ describe("filing", () => {
     );
   });
 
-  it("posts every QA scope folded under its number, filed ones linked, then what needs a human", () => {
+  it("posts the filed QA scopes first, linked, then each one still proposed folded, then what needs a human", () => {
     const text = renderProposals(
       { ...p, needsHuman: ["Invoice emails: third-party APIs unreachable"] },
       "release/2026-11-25",
       { billing: { id: "b", identifier: "REC-201", url: "https://linear/REC-201", cancelled: false } },
       "## Decisions\n\nSplit billing from checkout.",
     );
-    expect(text).toMatch(/^\*\*QA scopes\*\* for `release\/2026-11-25`: 3 proposed, 1 filed\./);
+    expect(text).toMatch(/^\*\*QA scopes\*\* for `release\/2026-11-25`: 1 filed, 2 still proposed\.\n\n\*\*Filed\*\*\n\n- 2\. QA: Billing: \[REC-201\]\(https:\/\/linear\/REC-201\)\n\n\*\*Still proposed\*\*: 1, 3\n\n/);
     expect(text).toContain("+++ 1. QA: Portal checkout\n\n**Branch:** release/2026-11-25");
-    expect(text).toContain("+++ 2. QA: Billing · filed as REC-201\n\n[REC-201](https://linear/REC-201): its description is the QA scope now.\n\n+++");
+    expect(text).not.toContain("+++ 2. QA: Billing");
+    expect(text).toContain("Reply with what to accept, change or drop");
     expect(text).toContain("+++ Run notes: the proposals as written\n\n## Decisions\n\nSplit billing from checkout.\n\n+++");
     expect(text).toContain("**Needs a human**\n\n- Invoice emails: third-party APIs unreachable");
+  });
+
+  it("on a first run lists the proposals alone", () => {
+    const text = renderProposals(p, "main", {}, "notes");
+    expect(text).toMatch(/^\*\*QA scopes\*\* for `main`: 3 proposed\.\n\n\+\+\+ 1\. QA: Portal checkout/);
+    expect(text).not.toContain("**Filed**");
+    expect(text).not.toContain("**Still proposed**");
+  });
+
+  it("asks nothing once every QA scope is filed, cancelled ones too", () => {
+    const all: Filed = {
+      "portal checkout": { id: "a", identifier: "REC-200", url: "u0", cancelled: false },
+      billing: { id: "b", identifier: "REC-201", url: "u1", cancelled: false },
+      settings: { id: "c", identifier: "REC-202", url: "u2", cancelled: true },
+    };
+    expect(anyProposed(p, all)).toBe(false);
+    expect(anyProposed(p, { billing: all.billing! })).toBe(true);
+    const text = renderProposals(p, "main", all, "notes");
+    expect(text).toMatch(/^\*\*QA scopes\*\* for `main`: 3 filed\. Nothing is left to accept\./);
+    expect(text).toContain("- 3. QA: Settings: [REC-202](u2) (cancelled)");
+    expect(text).not.toContain("Reply with");
+    expect(text).not.toContain("**Still proposed**");
   });
 });
 
