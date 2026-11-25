@@ -93,7 +93,8 @@ function teamId(): Promise<string> {
   })());
 }
 
-export type NewTicket = { title: string; description: string; labels: string[] };
+/** `parentId` files it as a sub-ticket of that ticket. */
+export type NewTicket = { title: string; description: string; labels: string[]; parentId?: string };
 export type FiledTicket = { id: string; identifier: string; url: string };
 
 /**
@@ -102,7 +103,14 @@ export type FiledTicket = { id: string; identifier: string; url: string };
  */
 export async function createTicket(ticket: NewTicket): Promise<FiledTicket> {
   const [team, me, labelIds] = await Promise.all([teamId(), linear().viewer, Promise.all(ticket.labels.map(labelId))]);
-  const payload = await linear().createIssue({ teamId: team, assigneeId: me.id, title: ticket.title, description: ticket.description, labelIds });
+  const payload = await linear().createIssue({
+    teamId: team,
+    assigneeId: me.id,
+    title: ticket.title,
+    description: ticket.description,
+    labelIds,
+    ...(ticket.parentId ? { parentId: ticket.parentId } : {}),
+  });
   const issue = await payload.issue;
   if (!payload.success || !issue) throw new Error(`Linear refused the ticket "${ticket.title}"`);
   return { id: issue.id, identifier: issue.identifier, url: issue.url };
@@ -198,6 +206,20 @@ export async function ticketParent(ticketId: string): Promise<{ id: string; iden
   >(`query($id: String!) { issue(id: $id) { parent { id identifier labels { nodes { name } } } } }`, { id: ticketId });
   const p = data.issue.parent;
   return p ? { id: p.id, identifier: p.identifier, labels: p.labels.nodes.map((l) => l.name) } : null;
+}
+
+/** The ticket's sub-tickets, whatever their state, oldest first. Up to 250. */
+export async function subTickets(ticketId: string): Promise<LabelledTicket[]> {
+  const data = await linear().client.request<
+    { issue: { children: { nodes: { id: string; identifier: string; title: string; url: string; createdAt: string; state: { type: string }; labels: { nodes: { name: string }[] } }[] } } },
+    { id: string }
+  >(
+    `query($id: String!) { issue(id: $id) { children(first: 250) { nodes { id identifier title url createdAt state { type } labels { nodes { name } } } } } }`,
+    { id: ticketId },
+  );
+  return data.issue.children.nodes
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((c) => ({ id: c.id, identifier: c.identifier, title: c.title, url: c.url, labels: c.labels.nodes.map((l) => l.name), state: stateOf(c.state.type) }));
 }
 
 /** How many of the ticket's sub-tickets are neither done nor cancelled. Up to 250. */

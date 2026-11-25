@@ -11,17 +11,12 @@ import { applyLabels, openTicketsWithLabel, postComment, ticketsWithLabel, ticke
 import { linearComment } from "../../src/logic.ts";
 import { skillSection } from "../../src/prompt.ts";
 import { finish, passResult, type Outcome, type Prepared, type RunContext, type Task } from "../../src/task.ts";
-import { bugDefect, DEFECT_TAG, type KnownDefect, nextDefectNumber, openDefects, RECHECK_TAG, renderKnownDefects } from "./defects.ts";
+import { BUG_LABEL, bugDefect, DEFECT_TAG, MAX_BUGS, type KnownDefect, nextDefectNumber, openDefects, RECHECK_TAG, renderKnownDefects } from "./defects.ts";
 import { FINDINGS, promptVars } from "./prompt.ts";
 import { MAX_COMMITS, RELEASED, renderReleaseChanges, type RepoChanges } from "./release.ts";
 import { COVERAGE_TAG, type DefectLinks, noLongerReproduces, renderCoverage, renderDefect, stillReproduces, testedOn } from "./report.ts";
 import { parseQaResult, qaResultJsonSchema, qaRetryPrompt } from "./result.ts";
 import { branchOf } from "./scope.ts";
-
-/** The label on the team's bug tickets: open ones are known defects. */
-const BUG_LABEL = "Type: Bug";
-/** The most bug tickets a run gets, newest first. */
-const MAX_BUGS = 100;
 
 export const qa: Task = {
   skills: ["factory-rules", "factory-stack"],

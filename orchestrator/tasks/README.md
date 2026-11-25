@@ -25,7 +25,7 @@ The chain: `explore` (easy call) → `implement` (pushed commits) → `fix-ci` (
 
 The deepen tasks sit before it: `deepen-scan` (files a ticket per strong candidate) → `deepen-refute` on each (a verdict, then waits on Oscar). Oscar grills through a candidate with `/factory-deepen-grill` and hands its ticket to `implement`, or cancels it.
 
-`qa` stands apart: it tests a branch and changes nothing, and every run waits on Oscar (design: [docs/qa-design.md](../../docs/qa-design.md)).
+The QA tasks stand apart: they test a branch and change nothing, and every run waits on Oscar (design: [docs/qa-design.md](../../docs/qa-design.md)). `qa-plan` proposes QA scopes → Oscar accepts → each is filed as a `qa` sub-ticket, and the `qa` runs go in parallel. Oscar can also file a `qa` ticket by hand.
 
 ### `implement`
 
@@ -255,9 +255,36 @@ deepen-refute/extract.md     not called by the agent: the factory resumes the se
                                    condition with `not-yet`, retried up to 2 times.
 ```
 
+### `qa-plan`
+
+Starts from: the `oscar-factory:qa-plan` label, on a ticket Oscar files: a `**Branch:**` line (`main` without one) and the focus, in his words.
+
+Ends with: proposals, and no commits. The factory posts them as one comment tagged `qa-plan proposals`: each QA scope folded under its number and title, then **Needs a human**, the flows only a runner gap would test. The ticket waits on Oscar, who replies ("Accept 1, 2, 4. Drop 3. For 2 also cover coupon stacking") and adds the label again. A later run revises what he asked, and the factory files each QA scope he accepted that isn't filed yet as a sub-ticket titled `QA: <Area>`, with its description (`tasks/qa/scope.ts`, whose `**Branch:**` line `qa` reads). Each is filed already labelled `oscar-factory:qa`, which starts its run, and names the other QA scopes by title, with their tickets where they are filed already. The ones he didn't mention stay proposals. A filed QA scope lives on its ticket from then on: it is never filed again, even cancelled, nor rewritten, and the proposals comment links it instead of repeating it. The comment ends with the proposals as the agent wrote them, folded, for its Decisions and Gaps. Filing anything adds the flag label `oscar-factory:qa-release` to the ticket, never taken off. The loop cap (5 runs) bounds the back-and-forth. A run that timed out, or whose proposals couldn't be read, files nothing.
+
+Before any runner, the run's base is the ticket's `**Branch:**` line, and `prepare` gathers what a `qa` run gets (the release changes, the known defects and the runner gaps), plus the last proposals, every reply of Oscar's since the first proposals, and the QA scopes already filed. It gets no stack and no browser, `branch: "none"`, and 30 minutes.
+
+```
+qa-plan/prompt.md            the focus (the ticket's description), the last proposals, Oscar's replies, the
+                             filed QA scopes, the release changes, the known defects, the runner gaps
+├── 1. factory-rules
+├── 2. map the product              areas and flows, from routes, pages, schema.graphql and docs-developer
+├── 3–4. split by area              one area per QA scope, every flow in exactly one; depth where the release
+│                                   changes are; about 6–12 flows each; runner-gap-only flows → Needs a human
+├── 5. a later run                  revise what Oscar asked; accepted stays accepted; dropped leaves
+├── 6. the proposals                a section per QA scope in the QA scope's own shape, then Needs a human /
+│                                   Decisions (and Gaps)
+└── Finish line                     proposals written, nothing accepted Oscar didn't accept, clean git status
+
+qa-plan/extract.md           not called by the agent: the factory resumes the session with it under
+                             `claude --json-schema` for `{ scopes, needsHuman }`, checked again with the
+                             same zod schema (`proposals.ts`), which also wants numbers, areas and flows unique,
+                             owners real, and nothing accepted before Oscar's first reply, retried up to 2
+                             times.
+```
+
 ### `qa`
 
-Starts from: the `oscar-factory:qa` label, on a ticket Oscar files by hand with a QA scope as its description: a `**Branch:**` line, the area, its flows, and what other QA scopes own.
+Starts from: the `oscar-factory:qa` label, on a QA scope `qa-plan` filed, or a ticket Oscar files by hand with a QA scope as its description: a `**Branch:**` line, the area, its flows, and what other QA scopes own.
 
 Ends with: findings and evidence, and no commits. The factory uploads the evidence the structured pass names and posts one comment per new defect, tagged `qa defect` and numbered on from the ticket's last (`QA-4`), then the coverage summary, tagged `qa coverage`: a row per flow, linked to its evidence or its defect, the commits tested, and the passing evidence and the suspects folded. A defect that matched a known one gets no comment of its own: a reply, tagged `qa recheck`, goes in that defect's thread or on its bug ticket, "Still reproduces on" the branch and its commits, with the severity it has now. A known defect whose steps passed gets "No longer reproduces on", fixed (naming the release change) or not reproduced. A ticket that got a new defect gets the flag label `oscar-factory:qa-defects`, never taken off. Whatever it found, the ticket then waits on Oscar. A timed-out run with readable coverage posts it too: its unreached flows say how far it got.
 
