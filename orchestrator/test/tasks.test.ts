@@ -18,7 +18,7 @@ describe("taskFromLabels", () => {
   it("rejects a factory label with no known task", () => {
     expect(taskFromLabels(["oscar-factory:deploy"])).toEqual({
       ok: false,
-      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:deepen-scan`, `oscar-factory:deepen-refute`, `oscar-factory:resolve`, `oscar-factory:fix-ci`, `oscar-factory:qa`.",
+      reason: "Unknown factory label `oscar-factory:deploy`. Known: `oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:deepen-scan`, `oscar-factory:deepen-refute`, `oscar-factory:resolve`, `oscar-factory:fix-ci`, `oscar-factory:qa`, `oscar-factory:qa-plan`.",
     });
   });
 
@@ -104,6 +104,12 @@ describe("TASKS", () => {
     expect(skillsFor("qa")).toEqual(["factory-rules", "factory-stack"]);
     expect(TASKS.qa.base?.(ticket({ description: "**Branch:** production\n**Area:** Billing" }))).toBe("production");
     expect(TASKS.qa.base?.(ticket({ description: "Billing." }))).toBeNull();
+  });
+
+  it("gives qa-plan only the rules: no stack, no browser, the branch its ticket names, and 30 minutes", () => {
+    expect(TASKS["qa-plan"]).toMatchObject({ browser: false, stack: false, branch: "none", timeLimitMinutes: 30, onBulkParent: false, clock: null });
+    expect(skillsFor("qa-plan")).toEqual(["factory-rules"]);
+    expect(TASKS["qa-plan"].base?.(ticket({ description: "**Branch:** release/2026-11-25\n\nBilling first." }))).toBe("release/2026-11-25");
   });
 
   it("gives explore the browser, the stack, origin/main only, and 20 minutes", () => {

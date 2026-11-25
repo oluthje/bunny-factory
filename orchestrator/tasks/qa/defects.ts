@@ -5,6 +5,10 @@
 import type { ThreadedComment } from "../../src/linear.ts";
 import { commentText, hasCommentTag } from "../../src/logic.ts";
 
+/** The label on the team's bug tickets: open ones are known defects, the newest `MAX_BUGS` of them. */
+export const BUG_LABEL = "Type: Bug";
+export const MAX_BUGS = 100;
+
 /** The tag on a defect comment's marker line. */
 export const DEFECT_TAG = "qa defect";
 /** The tag on a run's reply to a known defect: it still reproduces, or no longer does. */
