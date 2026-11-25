@@ -4,11 +4,12 @@ import type { Task } from "../src/task.ts";
 import { deepenRefute } from "./deepen-refute/index.ts";
 import { deepenScan } from "./deepen-scan/index.ts";
 import { explore } from "./explore/index.ts";
+import { fixCi } from "./fix-ci/index.ts";
 import { implement } from "./implement/index.ts";
 import { merge } from "./merge/index.ts";
 import { resolve } from "./resolve/index.ts";
 import { review } from "./review/index.ts";
 
-export type TaskName = "implement" | "review" | "explore" | "merge" | "deepen-scan" | "deepen-refute" | "resolve";
+export type TaskName = "implement" | "review" | "explore" | "merge" | "deepen-scan" | "deepen-refute" | "resolve" | "fix-ci";
 
-export const TASKS: Record<TaskName, Task> = { implement, review, explore, merge, "deepen-scan": deepenScan, "deepen-refute": deepenRefute, resolve };
+export const TASKS: Record<TaskName, Task> = { implement, review, explore, merge, "deepen-scan": deepenScan, "deepen-refute": deepenRefute, resolve, "fix-ci": fixCi };

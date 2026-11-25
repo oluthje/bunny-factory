@@ -12,7 +12,7 @@ A system of agents that turns tickets, PRs and schedules into merged code, deplo
 ## Tasks and runs
 
 **Task**:
-A kind of work the factory performs, defined once and run many times: explore, implement, review, merge, resolve, deepen-scan, deepen-refute, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
+A kind of work the factory performs, defined once and run many times: explore, implement, fix-ci, review, merge, resolve, deepen-scan, deepen-refute, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
 _Avoid_: job, workflow, action
 
 **Trigger**:
