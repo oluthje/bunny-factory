@@ -1,6 +1,6 @@
 ---
 name: factory-stack
-description: Reference for the Bunny stack in a factory run: repos, services, specs, browser login and known gaps. Use when running, testing or looking at Bunny during a factory run.
+description: Reference for the Bunny stack in a factory run: repos, services, specs, browser login and runner gaps. Use when running, testing or looking at Bunny during a factory run.
 ---
 
 ## Repos
@@ -42,11 +42,15 @@ A headless Chromium is available through the Playwright MCP server, and it trust
 bunny-stack run api bin/rails runner 'puts Users::GenerateLoginLink.call(user: User.find_by!(email: "admin@bunny.com"), host: "bunny.bunny.internal").data[:login_url]'
 ```
 
-## Known gaps
+## Runner gaps
 
-These fail because of the runner, not because of your change:
+What production does that the runner can't. They fail because of the runner, not because of the code:
 
-- The login, widget, metabase and admin routes return 502: those services aren't in the stack.
-- PDF rendering fails: PrinceXML isn't installed.
+- The login, widget, metabase and admin routes return 502: those services aren't in the stack. Login itself works: it lives in app at `/app/login`.
 - Third-party APIs are unreachable: the runner's network is restricted.
 - There is no GitHub or Linear access.
+- **Gateway rate limits.** Production Kong limits `/graphql` per token; Caddy doesn't. Rails' own limits (token issuance, `/oauth/register`) do run.
+- **Gateway behaviour we can't see.** The production Kong config lives in a `kubernetes-infrastructure` repo; `kong/kong-production.yml` is from 2022. Request size limits, allowlists and any other plugins are unknown.
+- **Other hosts.** Only `bunny.bunny.internal` resolves, so behaviour across warrens and on the generic `auth` host is limited.
+
+Auth is not a gap: Rails validates tokens, not Kong, and Caddy routes `/oauth`, `/graphql`, `/api` and `/.well-known/oauth-*` as Kong does.
