@@ -17,7 +17,8 @@ import { bundleForRun, importAndPush } from "../git.ts";
 import { branchesOnGitHub, commitIdentity, findOpenPr } from "../github.ts";
 import { RunHeartbeat } from "../heartbeat.ts";
 import { inngest, RUN_REQUESTED, RUN_STOP } from "../inngest.ts";
-import { applyLabels, ticketParent } from "../linear.ts";
+import { applyLabels, downloadUpload, ticketParent } from "../linear.ts";
+import { linearUploadUrls, localizeUploads, MAX_UPLOAD_BYTES, uploadPath } from "../linear-uploads.ts";
 import { mayStartRuns, parseChangedRepos, sandboxName, shQuote, type Ticket } from "../logic.ts";
 import { buildPrompt, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../prompt.ts";
 import { ARTIFACTS, EVIDENCE_DIR, HOME, RUN_DIR } from "../runner-paths.ts";
@@ -188,7 +189,7 @@ export const runTicket = inngest.createFunction(
       });
       const id = sandboxId;
 
-      // 3. Bundles, Claude's settings, the task's skills, prompt, docs and MCP config in. Each repo checks the branch out
+      // 3. Bundles, Claude's settings, the task's skills, prompt, docs, Linear uploads and MCP config in. Each repo checks the branch out
       // from its own bundle where it's on GitHub, and from the new base elsewhere. A task that never
       // touches the branch gets a detached `origin/<base>`, so a commit has nowhere to go.
       await step.run("upload-and-checkout", async () => {
@@ -200,7 +201,18 @@ export const runTicket = inngest.createFunction(
         await packSkills(task, skillsTgz);
         await upload(sb, skillsTgz, `${RUN_DIR}/skills.tgz`);
         await upload(sb, SETTINGS_FILE, `${HOME}/.claude/settings.json`);
-        const prompt = buildPrompt({ task, ticket, branch, base, timeLimitMinutes, vars: prepared.vars });
+        // Linear uploads (a ticket's mockup, a comment's screenshot) need the Linear API key, which
+        // the runner never holds: the runner gets local copies, and the prompt points at them.
+        const linked = buildPrompt({ task, ticket, branch, base, timeLimitMinutes, vars: prepared.vars });
+        const copies: Record<string, string> = {};
+        for (const url of linearUploadUrls(linked)) {
+          const file = await downloadUpload(url, MAX_UPLOAD_BYTES);
+          if (!file) continue;
+          const remote = uploadPath(Object.keys(copies).length + 1, file.contentType);
+          await upload(sb, file.data, remote);
+          copies[url] = remote;
+        }
+        const prompt = localizeUploads(linked, copies);
         fs.writeFileSync(path.join(localDir, "prompt.md"), prompt);
         await upload(sb, Buffer.from(prompt), `${RUN_DIR}/prompt.md`);
         for (const doc of settings.docs) await upload(sb, path.join(TASKS_DIR, task, doc), `${RUN_DIR}/${doc}`);
