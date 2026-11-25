@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 import { config } from "../config.ts";
 import { closeIfOpen, getFactoryState, runStatus, updateRun } from "../db/index.ts";
 import { bulkBranch, placeRun } from "../bulk.ts";
+import { deleteRunInputs } from "../disk.ts";
 import { bundleForRun, importAndPush } from "../git.ts";
 import { branchesOnGitHub, commitIdentity, findOpenPr } from "../github.ts";
 import { RunHeartbeat } from "../heartbeat.ts";
@@ -242,6 +243,8 @@ export const runTicket = inngest.createFunction(
            done`,
           600,
         );
+        // The runner has its own copies now. Last, so a retry of this step still finds the bundles.
+        deleteRunInputs(runId);
       });
 
       // 4. Catch-up: gems, npm, migrations, then the stack, for a task that uses it. Runs in the
