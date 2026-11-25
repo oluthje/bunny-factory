@@ -19,6 +19,7 @@ export const resolve: Task = {
   browser: false,
   stack: true,
   branch: "required",
+  base: null,
   timeLimitMinutes: 30,
   clock: null,
   onBulkParent: true, // merges main into the batch's bulk branch, for its PR into main

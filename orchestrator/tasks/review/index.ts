@@ -26,6 +26,7 @@ export const review: Task = {
   browser: false,
   stack: true,
   branch: "required",
+  base: null,
   timeLimitMinutes: null,
   clock: null,
   onBulkParent: false,

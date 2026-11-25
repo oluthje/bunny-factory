@@ -113,7 +113,7 @@ async function bundleBase(repo: string, outFile: string, base: string, branch?: 
 }
 
 /**
- * A run's way in: refreshes the mirror's `base` (main, or a bulk branch), fetches the run's branch
+ * A run's way in: refreshes the mirror's `base` (main, a bulk branch, or the one a task chose), fetches the run's branch
  * when `branch` is given and it's on GitHub, and bundles both, all under one hold of the repo's
  * lock so the bundle's base is the sha returned as `base`. `head` is the branch's sha on GitHub, or null.
  */

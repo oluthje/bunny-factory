@@ -37,16 +37,20 @@ export type Placement = { base: string; branch: string; bulkParent: boolean };
  *   the final PR. Before, it is a ticket like any other.
  * - Its direct sub-tickets build from the bulk branch, and their PRs target it. A grandchild looks
  *   only at its own parent.
+ * - A ticket whose task chose its base from the ticket (`Task.base`) builds from that, whatever
+ *   its parent: a bulk parent is still one, so only a task with `onBulkParent` runs on it.
  * - Everything else is on its own branch, from main.
  */
 export function placeRun(args: {
   ticket: Ticket;
   parent: { identifier: string; labels: readonly string[] } | null;
   bulkBranchExists: (branch: string) => boolean;
+  chosenBase: string | null;
 }): Placement {
-  const { ticket, parent, bulkBranchExists } = args;
+  const { ticket, parent, bulkBranchExists, chosenBase } = args;
   const inBulk = (t: { identifier: string; labels: readonly string[] }) => t.labels.includes(BULK_LABEL) || bulkBranchExists(bulkBranch(t.identifier));
   if (bulkBranchExists(bulkBranch(ticket.identifier))) return { base: config.baseBranch, branch: bulkBranch(ticket.identifier), bulkParent: true };
+  if (chosenBase) return { base: chosenBase, branch: ticket.branchName, bulkParent: false };
   if (parent && inBulk(parent)) return { base: bulkBranch(parent.identifier), branch: ticket.branchName, bulkParent: false };
   return { base: config.baseBranch, branch: ticket.branchName, bulkParent: false };
 }

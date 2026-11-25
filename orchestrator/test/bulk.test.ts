@@ -22,7 +22,7 @@ describe("placeRun", () => {
   const parent = (over: { labels?: string[] } = {}) => ({ identifier: "REC-40", labels: over.labels ?? [BULK_LABEL] });
 
   it("runs a ticket with no parent on its own branch, from main", () => {
-    expect(placeRun({ ticket: ticket(), parent: null, bulkBranchExists: () => false })).toEqual({
+    expect(placeRun({ ticket: ticket(), parent: null, bulkBranchExists: () => false, chosenBase: null })).toEqual({
       base: "main",
       branch: ticket().branchName,
       bulkParent: false,
@@ -30,7 +30,7 @@ describe("placeRun", () => {
   });
 
   it("runs a sub-ticket of an opted-in parent from the parent's bulk branch", () => {
-    expect(placeRun({ ticket: ticket(), parent: parent(), bulkBranchExists: () => false })).toEqual({
+    expect(placeRun({ ticket: ticket(), parent: parent(), bulkBranchExists: () => false, chosenBase: null })).toEqual({
       base: "factory/bulk/REC-40",
       branch: ticket().branchName,
       bulkParent: false,
@@ -39,16 +39,16 @@ describe("placeRun", () => {
 
   it("keeps a batch's base once its bulk branch exists, though the parent lost the label", () => {
     const exists = (name: string) => name === "factory/bulk/REC-40";
-    expect(placeRun({ ticket: ticket(), parent: parent({ labels: [] }), bulkBranchExists: exists }).base).toBe("factory/bulk/REC-40");
+    expect(placeRun({ ticket: ticket(), parent: parent({ labels: [] }), bulkBranchExists: exists, chosenBase: null }).base).toBe("factory/bulk/REC-40");
   });
 
   it("runs a sub-ticket of a parent that never opted in from main", () => {
-    expect(placeRun({ ticket: ticket(), parent: parent({ labels: ["Bug"] }), bulkBranchExists: () => false }).base).toBe("main");
+    expect(placeRun({ ticket: ticket(), parent: parent({ labels: ["Bug"] }), bulkBranchExists: () => false, chosenBase: null }).base).toBe("main");
   });
 
   it("runs the parent itself on its bulk branch, into main, once the branch exists", () => {
     const exists = (name: string) => name === "factory/bulk/REC-40";
-    expect(placeRun({ ticket: ticket({ identifier: "REC-40", labels: [BULK_LABEL] }), parent: null, bulkBranchExists: exists })).toEqual({
+    expect(placeRun({ ticket: ticket({ identifier: "REC-40", labels: [BULK_LABEL] }), parent: null, bulkBranchExists: exists, chosenBase: null })).toEqual({
       base: "main",
       branch: "factory/bulk/REC-40",
       bulkParent: true,
@@ -56,7 +56,7 @@ describe("placeRun", () => {
   });
 
   it("runs an opted-in parent as any ticket while it has no bulk branch yet", () => {
-    expect(placeRun({ ticket: ticket({ identifier: "REC-40", labels: [BULK_LABEL] }), parent: null, bulkBranchExists: () => false })).toEqual({
+    expect(placeRun({ ticket: ticket({ identifier: "REC-40", labels: [BULK_LABEL] }), parent: null, bulkBranchExists: () => false, chosenBase: null })).toEqual({
       base: "main",
       branch: ticket().branchName,
       bulkParent: false,
@@ -65,12 +65,31 @@ describe("placeRun", () => {
 
   it("still treats a parent whose bulk branch exists as one, without the label", () => {
     const exists = (name: string) => name === "factory/bulk/REC-123";
-    expect(placeRun({ ticket: ticket(), parent: null, bulkBranchExists: exists }).bulkParent).toBe(true);
+    expect(placeRun({ ticket: ticket(), parent: null, bulkBranchExists: exists, chosenBase: null }).bulkParent).toBe(true);
   });
 
   it("gives a grandchild no bulk base from its grandparent: only the direct parent counts", () => {
     // The direct parent didn't opt in; whatever its own parent did doesn't reach here.
-    expect(placeRun({ ticket: ticket(), parent: parent({ labels: [] }), bulkBranchExists: () => false }).base).toBe("main");
+    expect(placeRun({ ticket: ticket(), parent: parent({ labels: [] }), bulkBranchExists: () => false, chosenBase: null }).base).toBe("main");
+  });
+
+  it("builds from the base the task chose from the ticket, over main", () => {
+    expect(placeRun({ ticket: ticket(), parent: null, bulkBranchExists: () => false, chosenBase: "production" })).toEqual({
+      base: "production",
+      branch: ticket().branchName,
+      bulkParent: false,
+    });
+  });
+
+  it("builds from the chosen base over a bulk parent's bulk branch", () => {
+    expect(placeRun({ ticket: ticket(), parent: parent(), bulkBranchExists: () => false, chosenBase: "release/2026-11-25" }).base).toBe(
+      "release/2026-11-25",
+    );
+  });
+
+  it("still treats a bulk parent as one when its task chose a base, so the guard stops the run", () => {
+    const exists = (name: string) => name === "factory/bulk/REC-123";
+    expect(placeRun({ ticket: ticket(), parent: null, bulkBranchExists: exists, chosenBase: "production" }).bulkParent).toBe(true);
   });
 });
 

@@ -63,7 +63,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 
 ## A run's lifecycle
 
-1. Fly checks the snapshot is still valid: the same Ruby and Node versions and private gem versions as the target `main`. On a mismatch, the run doesn't start and you're told to rebuild.
+1. Fly places the run: its base is `main`, a bulk parent's bulk branch, or the branch its task chose from the ticket (`Task.base`), and fails it when no repo has a chosen base on GitHub.
 2. Fly creates the sandbox from the warm snapshot, with auto-stop off, a wall-clock TTL, and the Claude token as a Daytona Secret.
 3. Fly uploads a git bundle of the base or PR branch.
 4. The sandbox catches up and starts the stack: `bundle install`, `npm install` (not `npm ci`), `db:migrate`, then `bunny-stack up`.
