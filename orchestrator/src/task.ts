@@ -33,6 +33,7 @@ import { finished, nextTask, requeued, type RunEnd } from "./transitions.ts";
  *   branch itself. A parent is a container for its sub-tickets: only fixing its PR into main runs there.
  * - `prepare`: before the runner exists, gathers the task's inputs; returns what the run needs, or
  *   a `Stop` to end the run there, with no runner.
+ * - `watch`: what the task does when a sub-ticket of a ticket with its flag label changes, or null.
  */
 export type Task = {
   skills: readonly string[];
@@ -45,7 +46,22 @@ export type Task = {
   clock: Clock | null;
   onBulkParent: boolean;
   prepare: (ctx: RunContext) => Promise<Prepared | Stop>;
+  watch: Watch | null;
 };
+
+/**
+ * A watch on a family of tickets. When a sub-ticket of a ticket labelled `flag` changes (its labels,
+ * its state, a comment or a reply), Linear's webhook says so, and the engine
+ * (functions/watch.ts) calls `changed` with the parent, once per burst of changes. It starts no
+ * run: it reads the family and may post on the parent.
+ */
+export type Watch = {
+  flag: string;
+  changed: (ctx: { step: Step; parent: ParentTicket }) => Promise<unknown>;
+};
+
+/** The ticket a watch is called for. */
+export type ParentTicket = { id: string; identifier: string };
 
 /**
  * A clock trigger. On `cron` the engine (functions/clock.ts) asks the task for a ticket, files it

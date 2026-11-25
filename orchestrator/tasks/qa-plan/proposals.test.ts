@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { linearComment } from "../../src/logic.ts";
 import { oscar } from "../../test/fixtures.ts";
-import { filedByArea, latestProposals, oscarReplied, parseProposals, PROPOSALS_TAG, renderProposals, scopeDescription, toFile, type Proposals, type Scope } from "./proposals.ts";
+import { filedByArea, latestProposals, needsHumanOf, oscarReplied, parseProposals, PROPOSALS_TAG, renderProposals, scopeDescription, toFile, type Proposals, type Scope } from "./proposals.ts";
 
 const scope = (over: Partial<Scope> = {}): Scope => ({
   number: 1,
@@ -98,5 +98,13 @@ describe("the thread", () => {
     expect(oscarReplied([posted("2026-11-25T01:00:00Z")])).toBe(false);
     expect(oscarReplied([posted("2026-11-25T01:00:00Z"), oscar("Accept 1.", "2026-11-25T02:00:00Z"), posted("2026-11-25T03:00:00Z")])).toBe(true);
     expect(oscarReplied([oscar("Please plan this.", "2026-11-25T00:00:00Z")])).toBe(false);
+  });
+});
+
+describe("needsHumanOf", () => {
+  it("reads back the list renderProposals writes, for the QA verdict", () => {
+    const text = renderProposals(proposals([scope()], ["Invoice emails: third-party APIs unreachable", "SSO: login route 502"]), "main", {}, "notes");
+    expect(needsHumanOf(text)).toEqual(["Invoice emails: third-party APIs unreachable", "SSO: login route 502"]);
+    expect(needsHumanOf(renderProposals(proposals([scope()]), "main", {}, "notes"))).toEqual([]);
   });
 });

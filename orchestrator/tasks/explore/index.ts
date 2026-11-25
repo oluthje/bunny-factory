@@ -22,6 +22,7 @@ export const explore: Task = {
   clock: null,
   onBulkParent: false,
   prepare,
+  watch: null,
 };
 
 async function prepare({ step, runId, ticket, localDir, timeLimitMinutes }: RunContext): Promise<Prepared> {

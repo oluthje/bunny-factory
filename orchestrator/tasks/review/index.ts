@@ -31,6 +31,7 @@ export const review: Task = {
   clock: null,
   onBulkParent: false,
   prepare,
+  watch: null,
 };
 
 async function prepare({ step, runId, ticket, branch, base, timeLimitMinutes, heads, openPrs }: RunContext): Promise<Prepared> {

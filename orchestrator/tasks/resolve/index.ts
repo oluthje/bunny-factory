@@ -24,6 +24,7 @@ export const resolve: Task = {
   clock: null,
   onBulkParent: true, // merges main into the batch's bulk branch, for its PR into main
   prepare,
+  watch: null,
 };
 
 async function prepare({ step, runId, ticket, branch, base, timeLimitMinutes, openPrs }: RunContext): Promise<Prepared | Stop> {

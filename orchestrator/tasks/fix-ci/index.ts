@@ -30,6 +30,7 @@ export const fixCi: Task = {
   clock: null,
   onBulkParent: true, // gates the PR from a bulk parent's branch into main, as implement's next step
   prepare,
+  watch: null,
 };
 
 const stop = (text: string, end: RunEnd = { status: "succeeded", next: "human" }): Stop => ({ stop: { end, text } });

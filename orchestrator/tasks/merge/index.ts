@@ -37,6 +37,7 @@ export const merge: Task = {
   clock: null,
   onBulkParent: false,
   prepare,
+  watch: null,
 };
 
 /** Tries per merge, for a git host error that may pass: a 5xx or a dropped connection. */
