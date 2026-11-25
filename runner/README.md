@@ -4,8 +4,8 @@ A Daytona snapshot that runs the bunny stack **without Docker**, so a coding age
 and verify end-to-end changes inside one small sandbox.
 
 The team's standard stack (hop + docker compose) is untouched. This repo clones `api`,
-`app`, `portal` and `kong` and runs them as they are. It also clones `components`, `docs` and
-`docs-developer`, but installs and runs nothing for them. Nothing in those repos is edited apart
+`app`, `portal` and `kong` and runs them as they are. It also clones `components`, `docs`,
+`docs-developer`, `skills-internal` and `integration-tests`, but installs and runs nothing for them. Nothing in those repos is edited apart
 from the gitignored `.env` files and build output.
 
 ## What runs where
@@ -67,7 +67,7 @@ Snapshots are built on your Mac, never inside a sandbox: Tier 1/2 sandboxes can'
    pushes it to Daytona with `daytona-v0 snapshot push`. `--no-push` stops after the check.
 
 The GitHub token needs read access to `api`, `app`, `portal`, `kong`, `components`, `docs`,
-`docs-developer` and the private gem repos (`filter_parser`, `operationable`, `skills-internal`). It reaches the build only as a BuildKit
+`docs-developer`, `integration-tests` and the private gem repos (`filter_parser`, `operationable`, `skills-internal`). It reaches the build only as a BuildKit
 secret, and run sandboxes never hold it.
 
 To build only the base on Daytona's builder instead, pass the whole directory as context:

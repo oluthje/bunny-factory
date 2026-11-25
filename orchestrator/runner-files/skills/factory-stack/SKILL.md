@@ -7,11 +7,13 @@ description: Reference for the Bunny stack in a factory run: repos, services, sp
 
 The Bunny repos are in `~/bunny`: `api` (Rails), `app` and `portal` (Vite), and `kong`. Each has its own `CLAUDE.md` / `AGENTS.md`; read it before changing that repo.
 
-`components`, `docs` and `docs-developer` are there too, checked out like the others, but nothing is installed or running for them:
+`components`, `docs`, `docs-developer`, `skills-internal` and `integration-tests` are there too, checked out like the others, but nothing is installed or running for them:
 
 - `components` is the `@bunnyapp/components` package. `app` and `portal` install it from npm, so a change here doesn't reach the running stack. To run its checks, `npm ci` there first.
 - `docs` is the public docs site (Jekyll, with Tailwind through npm). Its gems and `node_modules` aren't installed.
 - `docs-developer` is the developer docs, in GitBook markdown. There's nothing to build.
+- `skills-internal` is the Bunny AI agent's skills (`SKILL.md` files), a gem the api loads from GitHub at the commit its `Gemfile.lock` pins. The running api doesn't read `~/bunny/skills-internal`, so an edit there doesn't reach the chat. The api picks up a change only after the skills-internal PR merges and a later api PR bumps the pin with `bundle update skills-internal --conservative`. Don't bump it in the same run: the pin must name a commit on skills-internal's `main`. To try an edit in the running stack, run `bundle config set --local local.skills-internal ~/bunny/skills-internal` and `bundle config set --local disable_local_branch_check true` in `~/bunny/api`, then `bunny-stack restart api`. That also rewrites the api's `Gemfile.lock`: afterwards, `bundle config unset --local local.skills-internal`, `bundle config unset --local disable_local_branch_check` and `git checkout Gemfile.lock`, and commit none of it.
+- `integration-tests` is the Cucumber + Capybara end-to-end suite. It isn't wired to this stack, so its scenarios don't run here; edit its features and steps by reading them.
 
 Set one up only when the ticket needs it.
 
