@@ -1,19 +1,23 @@
 // `qa-plan` splits QA of a branch, named by its ticket's `**Branch:**` line, into QA scopes, one
 // product area each, reading code only. A first run proposes them and waits on Oscar; a later run
 // revises them as his replies ask, and the factory files each one he accepted as a sub-ticket
-// labelled `oscar-factory:qa`, which starts its run. The tree of its prompt is in tasks/README.md;
-// the design is docs/qa-design.md.
+// labelled `oscar-factory:qa`, which starts its run. It watches the QA scopes it filed: once every
+// one has finished, it posts the QA verdict on its ticket, and again whenever the verdict changes.
+// The tree of its prompt is in tasks/README.md; the design is docs/qa-design.md.
 import { config } from "../../src/config.ts";
 import { commitsBetween } from "../../src/git.ts";
-import { QA_DEFECTS_LABEL, QA_RELEASE_LABEL, taskLabel } from "../../src/labels.ts";
-import { applyLabels, createTicket, openTicketsWithLabel, subTickets, ticketComments, ticketsWithLabel, ticketThreads } from "../../src/linear.ts";
+import { IN_PROGRESS_LABEL, QA_DEFECTS_LABEL, QA_RELEASE_LABEL, taskLabel } from "../../src/labels.ts";
+import { applyLabels, createTicket, openTicketsWithLabel, postComment, subTickets, ticketComments, ticketsWithLabel, ticketThreads } from "../../src/linear.ts";
+import { commentText, hasCommentTag, linearComment } from "../../src/logic.ts";
 import { skillSection } from "../../src/prompt.ts";
-import { finish, passResult, type Outcome, type Prepared, type RunContext, type Task } from "../../src/task.ts";
+import { finish, passResult, type Outcome, type Prepared, type RunContext, type Task, type Watch } from "../../src/task.ts";
 import { BUG_LABEL, bugDefect, type KnownDefect, MAX_BUGS, openDefects, renderKnownDefects } from "../qa/defects.ts";
 import { MAX_COMMITS, RELEASED, renderReleaseChanges, type RepoChanges } from "../qa/release.ts";
+import { defectTicketOf } from "../qa/defects.ts";
 import { branchOf, scopeTitle } from "../qa/scope.ts";
+import { type Counted, fingerprintOf, knownCounted, lastRunCoverage, perScope, postedDefects, renderVerdict, type ScopeState, VERDICT_TAG } from "./verdict.ts";
 import { PROPOSALS, promptVars, renderThread } from "./prompt.ts";
-import { type Filed, filedByArea, oscarReplied, parseProposals, PROPOSALS_TAG, proposalsJsonSchema, proposalsRetryPrompt, renderProposals, scopeDescription, toFile } from "./proposals.ts";
+import { type Filed, filedByArea, needsHumanOf, oscarReplied, parseProposals, PROPOSALS_TAG, proposalsJsonSchema, proposalsRetryPrompt, renderProposals, scopeDescription, toFile } from "./proposals.ts";
 
 export const qaPlan: Task = {
   skills: ["factory-rules"],
@@ -26,8 +30,50 @@ export const qaPlan: Task = {
   clock: null,
   onBulkParent: false,
   prepare,
-  watch: null,
+  // The QA verdict: a sub-ticket's run ending, a regrade or a duplicate mark brings it here.
+  watch: { flag: QA_RELEASE_LABEL, changed: postVerdict },
 };
+
+/** A filed QA scope: a sub-ticket titled as one, and not cancelled. */
+const isQaScope = (t: { title: string; state: string }) => t.title.startsWith(scopeTitle("")) && t.state !== "cancelled";
+
+/**
+ * Once every filed QA scope has finished (its coverage posted, and no qa run queued or working),
+ * posts the QA verdict on the qa-plan ticket, unless the last one says the same.
+ */
+async function postVerdict({ step, parent }: Parameters<Watch["changed"]>[0]): Promise<unknown> {
+  const gathered = await step.run("gather-qa-scopes", async () => {
+    const scopes: ScopeState[] = [];
+    const defects: Counted[] = [];
+    for (const t of (await subTickets(parent.id)).filter(isQaScope)) {
+      const comments = await ticketThreads(t.id);
+      const coverage = lastRunCoverage(comments);
+      const queued = t.labels.includes(taskLabel("qa")) || t.labels.includes(IN_PROGRESS_LABEL);
+      scopes.push({ identifier: t.identifier, title: t.title, url: t.url, finished: coverage !== null && !queued, coverage });
+      const known: Counted[] = [];
+      for (const k of coverage?.known ?? []) {
+        // A QA defect's own thread holds Oscar's regrade of it; a bug ticket has none.
+        const at = defectTicketOf(k.ref);
+        const thread = at === t.identifier ? comments : at ? await ticketThreads(at) : null;
+        known.push(knownCounted(k, t.identifier, at && thread ? { identifier: at, comments: thread } : null));
+      }
+      defects.push(...perScope(postedDefects(t, t.identifier, comments), known));
+    }
+    return { scopes, defects };
+  });
+  const waiting = gathered.scopes.filter((s) => !s.finished).map((s) => s.identifier);
+  if (!gathered.scopes.length || waiting.length) return { posted: false, waiting };
+
+  return step.run("post-verdict", async () => {
+    const comments = await ticketComments(parent.id);
+    const proposals = comments.findLast((c) => hasCommentTag(c.body, PROPOSALS_TAG));
+    const text = renderVerdict({ ...gathered, needsHuman: proposals ? needsHumanOf(commentText(proposals.body)) : [] });
+    const last = comments.findLast((c) => hasCommentTag(c.body, VERDICT_TAG));
+    if (last && fingerprintOf(commentText(last.body)) === fingerprintOf(text)) return { posted: false, unchanged: true };
+    await postComment(parent.id, linearComment(text, null, VERDICT_TAG));
+    return { posted: true };
+  });
+}
 
 async function prepare({ step, runId, ticket, base, timeLimitMinutes }: RunContext): Promise<Prepared> {
   const releaseChanges: RepoChanges[] = await step.run("gather-release-changes", async (): Promise<RepoChanges[]> =>

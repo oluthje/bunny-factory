@@ -110,6 +110,8 @@ describe("TASKS", () => {
     expect(TASKS["qa-plan"]).toMatchObject({ browser: false, stack: false, branch: "none", timeLimitMinutes: 30, onBulkParent: false, clock: null });
     expect(skillsFor("qa-plan")).toEqual(["factory-rules"]);
     expect(TASKS["qa-plan"].base?.(ticket({ description: "**Branch:** release/2026-11-25\n\nBilling first." }))).toBe("release/2026-11-25");
+    expect(TASKS["qa-plan"].watch?.flag).toBe("oscar-factory:qa-release");
+    for (const task of Object.keys(TASKS) as TaskName[]) if (task !== "qa-plan") expect(TASKS[task].watch, task).toBeNull();
   });
 
   it("gives explore the browser, the stack, origin/main only, and 20 minutes", () => {

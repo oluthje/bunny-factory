@@ -2,7 +2,7 @@
 // a recheck reply on each known defect it walked, and the coverage summary, a row per flow with
 // every result linked to its evidence. Pure: no I/O, so it is unit-tested in report.test.ts.
 import { isImage, isVideo, type Uploaded } from "../../src/evidence.ts";
-import { NO_LONGER_REPRODUCES } from "./defects.ts";
+import { NO_LONGER_REPRODUCES, type Severity } from "./defects.ts";
 import type { Defect, Flow, QaResult } from "./result.ts";
 
 /** The tag on the coverage summary's marker line: the QA verdict sweep reads it. */
@@ -121,4 +121,40 @@ export function renderCoverage(args: { result: QaResult; defectLinks: DefectLink
     sections.push(`+++ Suspects, not reproduced\n\n${result.suspects.map((s) => `- **${s.suspect}**: ${s.tried}`).join("\n")}\n\n+++`);
   }
   return sections.join("\n\n");
+}
+
+/** A coverage summary read back, for the QA verdict. */
+export type Coverage = {
+  branch: string;
+  flows: number;
+  passed: number;
+  defects: number;
+  blocked: number;
+  notReached: number;
+  /** The known defects that reproduced again, each with the severity it had in this run. */
+  known: { ref: string; url: string; severity: Severity }[];
+  blockedFlows: { flow: string; gap: string }[];
+  /** The commits line, as written: `api \`abc1234\`, app \`def5678\``. */
+  commits: string;
+};
+
+const HEAD_LINE = /^\*\*QA coverage\*\* of `([^`]+)`: (\d+) flows · (\d+) passed · (\d+) hit a defect · (\d+) blocked · (\d+) not reached$/m;
+const ROW = /^\| ((?:[^|\\]|\\.)*) \| (.*) \|$/gm;
+const KNOWN_CELL = /^❌ Known: \[([^\]]+)\]\(([^)]+)\), still reproduces \((Blocker|High|Medium|Low)\)/;
+
+/** The coverage summary in a comment's text, as `renderCoverage` wrote it, or null. */
+export function parseCoverage(text: string): Coverage | null {
+  const head = HEAD_LINE.exec(text);
+  if (!head) return null;
+  const [, branch, flows, passed, defects, blocked, notReached] = head;
+  const known: Coverage["known"] = [];
+  const blockedFlows: Coverage["blockedFlows"] = [];
+  for (const [, name, result] of text.matchAll(ROW)) {
+    const flow = name!.replaceAll("\\|", "|");
+    const k = KNOWN_CELL.exec(result!);
+    if (k) known.push({ ref: k[1]!, url: k[2]!, severity: k[3] as Severity });
+    if (result!.startsWith("⛔ Blocked: ")) blockedFlows.push({ flow, gap: result!.slice("⛔ Blocked: ".length).split(" · ")[0]! });
+  }
+  const commits = /^\*\*Commits tested:\*\* (.*)$/m.exec(text)?.[1] ?? "unknown";
+  return { branch: branch!, flows: +flows!, passed: +passed!, defects: +defects!, blocked: +blocked!, notReached: +notReached!, known, blockedFlows, commits };
 }

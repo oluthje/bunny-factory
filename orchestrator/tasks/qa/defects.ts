@@ -17,6 +17,20 @@ export const RECHECK_TAG = "qa recheck";
 export const SEVERITIES = ["Blocker", "High", "Medium", "Low"] as const;
 export type Severity = (typeof SEVERITIES)[number];
 
+/** The graver of two severities. */
+export const graver = (a: Severity, b: Severity): Severity => (SEVERITIES.indexOf(a) <= SEVERITIES.indexOf(b) ? a : b);
+
+/** Oscar's `Regrade: <severity>` reply in a defect's thread, with his reason after it. */
+export function regradeOf(text: string): Severity | null {
+  const m = /^Regrade:\s*(Blocker|High|Medium|Low)\b/i.exec(text.trim());
+  return m ? SEVERITIES.find((s) => s.toLowerCase() === m[1]!.toLowerCase())! : null;
+}
+
+/** Oscar's `Duplicate of REC-201 #4` reply in a defect's thread: the reference it duplicates. */
+export function duplicateOf(text: string): string | null {
+  return /^Duplicate of\s+([A-Z][A-Z0-9]+-\d+(?:\s*#\d+)?)/i.exec(text.trim())?.[1]!.replace(/\s*#/, " #").toUpperCase() ?? null;
+}
+
 /** The opening of a recheck reply that closes a known defect: later runs stop matching against it. */
 export const NO_LONGER_REPRODUCES = "No longer reproduces";
 
@@ -49,6 +63,9 @@ export function nextDefectNumber(comments: readonly ThreadedComment[]): number {
 
 /** How a defect is referred to: `REC-201 #4` for defect 4 on REC-201. A bug ticket goes by its id. */
 export const defectRef = (identifier: string, number: number) => `${identifier} #${number}`;
+
+/** The ticket a QA defect's reference names (`REC-201` for `REC-201 #4`); null for a bug ticket's. */
+export const defectTicketOf = (ref: string): string | null => /^(\S+) #\d+$/.exec(ref)?.[1] ?? null;
 
 /** A defect the run matches its failures against, and where a recheck reply goes. */
 export type KnownDefect = {

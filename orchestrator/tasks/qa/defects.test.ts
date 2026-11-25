@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bugDefect, DEFECT_TAG, nextDefectNumber, openDefects, parseDefect, RECHECK_TAG, renderKnownDefects } from "./defects.ts";
+import { bugDefect, DEFECT_TAG, defectTicketOf, duplicateOf, graver, regradeOf, nextDefectNumber, openDefects, parseDefect, RECHECK_TAG, renderKnownDefects } from "./defects.ts";
 import { defect, factory, threaded } from "./fixtures.ts";
 import { renderDefect } from "./report.ts";
 
@@ -57,5 +57,30 @@ describe("renderKnownDefects", () => {
     expect(bug.commentId).toBeNull();
     expect(renderKnownDefects([bug])).toBe(`<known-defect ref="REC-77" title="The 'Pay' button">\nSteps: …\n</known-defect>`);
     expect(renderKnownDefects([])).toBe("None.");
+  });
+});
+
+describe("Oscar's replies in a defect's thread", () => {
+  it("reads a regrade, with his reason after it", () => {
+    expect(regradeOf("Regrade: medium. Only legacy plans hit it.")).toBe("Medium");
+    expect(regradeOf("I'd regrade this")).toBeNull();
+  });
+
+  it("reads a duplicate mark, a QA defect or a bug ticket", () => {
+    expect(duplicateOf("Duplicate of rec-201 #4")).toBe("REC-201 #4");
+    expect(duplicateOf("Duplicate of REC-77, same steps")).toBe("REC-77");
+    expect(duplicateOf("Not a duplicate of REC-77")).toBeNull();
+  });
+
+  it("knows the graver severity", () => {
+    expect(graver("Medium", "Blocker")).toBe("Blocker");
+    expect(graver("High", "Low")).toBe("High");
+  });
+});
+
+describe("defectTicketOf", () => {
+  it("names the ticket a QA defect is on, and nothing for a bug ticket", () => {
+    expect(defectTicketOf("REC-201 #4")).toBe("REC-201");
+    expect(defectTicketOf("REC-77")).toBeNull();
   });
 });

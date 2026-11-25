@@ -142,3 +142,11 @@ export function latestProposals(comments: readonly TicketComment[]): { proposals
 
 /** Whether Oscar has replied to any proposals yet: until then, nothing can be accepted. */
 export const oscarReplied = (comments: readonly TicketComment[]): boolean => (latestProposals(comments)?.replies.length ?? 0) > 0;
+
+/** The **Needs a human** list in a proposals comment's text, for the QA verdict to repeat. */
+export function needsHumanOf(text: string): string[] {
+  const at = text.indexOf("**Needs a human**");
+  if (at === -1) return [];
+  const after = text.slice(at + "**Needs a human**".length).trimStart();
+  return after.split("\n\n", 1)[0]!.split("\n").flatMap((l) => (l.startsWith("- ") ? [l.slice(2)] : []));
+}
