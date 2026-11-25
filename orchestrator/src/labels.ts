@@ -29,7 +29,12 @@ export const BULK_LABEL = `${LABEL_PREFIX}bulk`;
  * QA runs find the defects posted so far. A flag, not a task: it queues nothing.
  */
 export const QA_DEFECTS_LABEL = `${LABEL_PREFIX}qa-defects`;
-export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL, BULK_LABEL, QA_DEFECTS_LABEL];
+/**
+ * Set by the factory on a `qa-plan` ticket once it files its first QA scope, and never taken off:
+ * how the QA verdict finds the releases it may be owed on. A flag, not a task: it queues nothing.
+ */
+export const QA_RELEASE_LABEL = `${LABEL_PREFIX}qa-release`;
+export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL, BULK_LABEL, QA_DEFECTS_LABEL, QA_RELEASE_LABEL];
 
 /** The label that queues a run of the task. */
 export function taskLabel(task: TaskName): string {
