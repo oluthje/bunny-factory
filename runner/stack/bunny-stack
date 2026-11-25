@@ -2,7 +2,8 @@
 # The lightweight bunny stack: api, jobs, app and portal as plain processes, with no Docker.
 # Shared services (postgres, redis, maildev, caddy) come from bunny-infra.
 #
-#   bunny-stack setup              clone missing repos, install gems and node modules, prepare the db
+#   bunny-stack setup              clone missing repos, install gems and node modules, rebuild
+#                                  databases ahead of the code, migrate
 #   bunny-stack up [svc...]        setup, then start services (default: all) and wait for their ports
 #   bunny-stack down [svc...]      stop services (default: all)
 #   bunny-stack restart <svc...>   stop, then start
@@ -161,6 +162,47 @@ $(tail -n 30 "$STATE/logs/$svc.log")"
 
 infra() { sudo BUNNY_ROOT="$BUNNY_ROOT" BUNNY_STACK_DIR="$STACK_DIR" "$STACK_DIR/bunny-infra" "$@"; }
 
+db_exists() { [[ -n $(psql -h 127.0.0.1 -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$1'") ]]; }
+
+# The api's databases, each with the folder under db/migrate holding its migrations: primary,
+# events and queue, in development or test (config/database.yml, with the names api_env may set).
+api_databases() { # api_databases <development|test>
+  if [[ $1 == test ]]; then
+    printf '%s %s\n' "${TEST_DB_NAME:-bunny_test}" primary "${TEST_EVENTS_DB_NAME:-bunny_events_test}" events \
+      "${TEST_QUEUE_DB_NAME:-bunny_queue_test}" queue
+  else
+    printf '%s %s\n' "${DB_NAME:-bunny_development}" primary "${EVENTS_DB_NAME:-bunny_events}" events \
+      "${QUEUE_DB_NAME:-bunny_queue}" queue
+  fi
+}
+
+# The versions a database has applied that the checked-out code has no migration for: the
+# database is ahead of the code, as the snapshot's are on a branch behind the main they were
+# migrated to. Versions older than the folder's oldest migration don't count, so a squash doesn't.
+# Run in api's directory. Prints nothing for a database that doesn't exist.
+ahead_versions() { # ahead_versions <database> <migrations folder>
+  local db=$1 dir=$2 files
+  db_exists "$db" || return 0
+  files=$(ls -1 "$dir" 2>/dev/null | sed -nE 's/^([0-9]+)_.*\.rb$/\1/p' | sort -u || true)
+  [[ -n $files ]] || return 0
+  { psql -h 127.0.0.1 -U postgres -d "$db" -tAc 'SELECT version FROM schema_migrations' 2>/dev/null || true; } | sort -u \
+    | comm -23 - <(echo "$files") \
+    | awk -v oldest="$(head -n1 <<<"$files")" '$1 + 0 >= oldest + 0' | paste -sd' ' -
+}
+
+# Says which of the environment's databases are ahead of the code, and by which versions: the
+# line lands in catch-up.log. Succeeds when any is.
+databases_ahead() { # databases_ahead <development|test>
+  local env=$1 db folder versions any=1
+  while read -r db folder; do
+    versions=$(ahead_versions "$db" "db/migrate/$folder")
+    [[ -n $versions ]] || continue
+    warn "api: $db ($env) is ahead of the code: it has migrations this branch doesn't: $versions"
+    any=0
+  done < <(api_databases "$env")
+  return $any
+}
+
 cmd_setup() {
   local r
   mkdir -p "$BUNNY_ROOT"
@@ -216,7 +258,16 @@ cmd_setup() {
   (
     cd "$BUNNY_ROOT/api"
     api_env
-    if [[ -z $(psql -h 127.0.0.1 -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME:-bunny_development}'") ]]; then
+    # migrate never undoes a migration, so a database ahead of the code (the snapshot's, on a
+    # branch behind main) is rebuilt: development from scratch below, test as db:prepare makes it.
+    # Both are checked before either is rebuilt: Rails' db:drop in development drops test's too,
+    # and the fresh path's db:setup creates and loads them again from the branch's schema.
+    local dev_ahead=0 test_ahead=0
+    databases_ahead development && dev_ahead=1
+    databases_ahead test && test_ahead=1
+    if ((dev_ahead)); then say "api: rebuilding the development databases"; bin/rails db:drop; fi
+    if ((test_ahead)); then say "api: rebuilding the test databases"; RAILS_ENV=test bin/rails db:drop db:prepare; fi
+    if ! db_exists "${DB_NAME:-bunny_development}"; then
       # What hop's first-run init does: schema, seeds, migrations, then dev CORS origins.
       say "api: fresh database, running db:setup (schema + seeds; takes a few minutes)"
       bin/rails db:setup db:migrate

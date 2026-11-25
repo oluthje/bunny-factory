@@ -66,7 +66,10 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
 1. Fly places the run: its base is `main`, a bulk parent's bulk branch, or the branch its task chose from the ticket (`Task.base`), and fails it when no repo has a chosen base on GitHub.
 2. Fly creates the sandbox from the warm snapshot, with auto-stop off, a wall-clock TTL, and the Claude token as a Daytona Secret.
 3. Fly uploads a git bundle of the base or PR branch.
-4. The sandbox catches up and starts the stack: `bundle install`, `npm install` (not `npm ci`), `db:migrate`, then `bunny-stack up`.
+4. The sandbox catches up and starts the stack with `bunny-stack up`:
+   - `bundle install`, `npm install` (not `npm ci`).
+   - It rebuilds any database that is ahead of the code: one with a migration the branch has no file for, as on a branch behind the `main` the snapshot was migrated to. It checks api's three databases (`primary`, `events`, `queue`) and their test copies, names each one ahead and its versions in `catch-up.log`, then drops development's and builds it fresh (`db:setup db:migrate`, the CORS whitelist), and test's with `db:drop db:prepare`. A few minutes, only on runs that need it.
+   - `db:migrate`, then the services.
 5. Fly starts `claude -p …` in a background Daytona session.
 6. Fly polls Daytona every 30–60 seconds until the session exits or the hard timeout passes.
 7. Fly collects artifacts. This happens on success, failure and timeout:
