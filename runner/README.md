@@ -44,14 +44,14 @@ These files copy settings from the team's setup. When those change, update them:
 - `stack/Caddyfile` copies `kong/kong.yml`.
 - `svc_cmd` in `stack/bunny-stack` copies the `npm start` scripts and the compose commands.
 - `Dockerfile` copies the Ruby version from `api/.ruby-version`.
+- `Dockerfile` copies the PrinceXML major version and font packages from `api/Dockerfile`.
 
 ## Differences from the standard stack
 - All job queues share one worker thread. A chat turn can wait behind a batch job that is
   already running.
 - Puma runs one process. To change that, set `WEB_CONCURRENCY=2` in `~/bunny/stack.env`.
-- PrinceXML isn't installed, so PDF rendering fails. To add it, install it in the
-  Dockerfile and copy `api/license.dat` to `/usr/local/lib/prince/license/`.
-- login, widget, metabase and admin routes return 502. Those services aren't in the stack.
+- kong's `/login`, `/widget`, `/bi` (metabase) and `/packs`/`/assets` (admin) routes return 502.
+  Those services aren't in the stack. Login itself works: it lives in app at `/app/login`.
 - The integration-tests runner isn't wired up.
 
 ## Building
