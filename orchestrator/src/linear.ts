@@ -248,3 +248,61 @@ export async function blockedTickets(ticketId: string): Promise<(Linked & { id: 
     .filter((r) => r.type === "blocks")
     .map(({ relatedIssue: d }) => ({ id: d.id, identifier: d.identifier, state: stateOf(d.state.type), blockers: blockersOf(d.inverseRelations) }));
 }
+
+/** A comment as a thread sees it: its id to reply to, and the comment it replies to, if any. */
+export type ThreadedComment = {
+  id: string;
+  /** The top comment of the thread this one replies in; null for a top comment. */
+  parentId: string | null;
+  url: string;
+  body: string;
+  createdAt: string;
+  /** Written by the owner of LINEAR_API_KEY (Oscar), or by the factory posting as him. */
+  isMe: boolean;
+};
+
+/** Every comment on the ticket, replies included, oldest first. Up to 250. */
+export async function ticketThreads(ticketId: string): Promise<ThreadedComment[]> {
+  const data = await linear().client.request<
+    { issue: { comments: { nodes: { id: string; url: string; body: string; createdAt: string; parent: { id: string } | null; user: { isMe: boolean } | null }[] } } },
+    { id: string }
+  >(
+    `query($id: String!) { issue(id: $id) { comments(first: 250) { nodes { id url body createdAt parent { id } user { isMe } } } } }`,
+    { id: ticketId },
+  );
+  return data.issue.comments.nodes
+    .map((c) => ({ id: c.id, parentId: c.parent?.id ?? null, url: c.url, body: c.body, createdAt: c.createdAt, isMe: c.user?.isMe ?? false }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/**
+ * Posts a comment, or a reply in the thread of `parentId`, and returns its id and link. Not
+ * idempotent: call it in a step of its own.
+ */
+export async function postComment(ticketId: string, body: string, parentId?: string): Promise<{ id: string; url: string }> {
+  const payload = await linear().createComment({ issueId: ticketId, body, ...(parentId ? { parentId } : {}) });
+  const posted = await payload.comment;
+  if (!payload.success || !posted) throw new Error(`Linear refused the comment on ${ticketId}`);
+  return { id: posted.id, url: posted.url };
+}
+
+/** A ticket with what it says, for a prompt. */
+export type DescribedTicket = { id: string; identifier: string; title: string; url: string; description: string };
+
+/** The team's open tickets with the label, whatever their assignee, newest first. Up to `first`, at most 250. */
+export async function openTicketsWithLabel(label: string, first: number): Promise<DescribedTicket[]> {
+  const data = await linear().client.request<
+    { issues: { nodes: DescribedTicket[] } },
+    { team: string; label: string; first: number }
+  >(
+    `query($team: String!, $label: String!, $first: Int!) {
+      issues(first: $first, orderBy: createdAt, filter: {
+        team: { key: { eq: $team } },
+        labels: { some: { name: { eq: $label } } },
+        state: { type: { nin: ["completed", "canceled"] } }
+      }) { nodes { id identifier title url description } }
+    }`,
+    { team: config.linearTeam, label, first: Math.min(first, 250) },
+  );
+  return data.issues.nodes.map((i) => ({ ...i, description: i.description ?? "" }));
+}

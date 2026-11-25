@@ -12,7 +12,7 @@ A system of agents that turns tickets, PRs and schedules into merged code, deplo
 ## Tasks and runs
 
 **Task**:
-A kind of work the factory performs, defined once and run many times: explore, implement, fix-ci, review, merge, resolve, deepen-scan, deepen-refute, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
+A kind of work the factory performs, defined once and run many times: explore, implement, fix-ci, review, merge, resolve, deepen-scan, deepen-refute, qa-plan, qa, ratchet. A task may work on a ticket, a PR, or the codebase as a whole.
 _Avoid_: job, workflow, action
 
 **Trigger**:
@@ -29,6 +29,32 @@ _Avoid_: server, host, box, compute, sandbox
 **Candidate**:
 One deepening a deepen-scan run proposes: a refactor that would turn shallow modules into a deep one. Each strong candidate gets its own ticket, where a deepen-refute run argues against it and recommends `do it`, `don't` or `not yet`. A human decides.
 _Avoid_: suggestion, opportunity, proposal
+
+## QA
+
+**QA scope**:
+One bounded piece of QA work: a branch, an area, its flows, the release changes in it, and what other QA scopes own. Proposed in a `qa-plan` comment and, once Oscar accepts it, filed as a `qa` sub-ticket.
+_Avoid_: charter, slice, area, partition, test plan, plain "scope" (API clients have OAuth scopes)
+
+**Flow**:
+One end-to-end path a user or an API client takes, walked start to finish. Each flow gets one row in the coverage table.
+_Avoid_: test case, scenario, journey, path, use case
+
+**Suspect**:
+A possible defect, from the code hunt or a hunch, not yet reproduced. It becomes a defect only with evidence.
+_Avoid_: lead, hunch, potential bug, possible defect
+
+**Defect**:
+A reproduced failure of a flow, or a place where the UI or API breaks its documented contract, with evidence and a severity.
+_Avoid_: bug, issue, finding, problem
+
+**Runner gap**:
+Something production does that the runner can't, such as calling a third-party API. A flow stopped by one is **blocked**, never a defect.
+_Avoid_: known gap, limitation, unsupported
+
+**QA verdict**:
+The comment on a `qa-plan` ticket once every filed QA scope has finished: go, go with caveats or no-go, set by rule from the defects' severities.
+_Avoid_: rollup, sign-off, approval, release verdict
 
 ## Services
 

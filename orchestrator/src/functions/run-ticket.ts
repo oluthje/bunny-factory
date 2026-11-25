@@ -173,7 +173,7 @@ export const runTicket = inngest.createFunction(
 
       // 1b. The task's own inputs, gathered before the sandbox exists. The task may end the run
       // here instead, when there is nothing for an agent to do.
-      const prepared = await settings.prepare({ step, runId, ticket, branch, base, localDir, timeLimitMinutes, heads, openPrs });
+      const prepared = await settings.prepare({ step, runId, ticket, branch, base, localDir, timeLimitMinutes, baseShas, heads, openPrs });
       if ("stop" in prepared) {
         const { end, text, record } = prepared.stop;
         await step.run("stop-before-runner", () => finish({ runId, ticketId: ticket.id, end, text, record: record ?? {} }));

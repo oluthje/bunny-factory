@@ -40,7 +40,7 @@ Terms follow the `software-factory` skill: ticket tracker, ticket source, git ho
    - A Linear webhook on the team, for issues and comments, calls `/webhooks/linear` on Fly. The orchestrator checks its signature with `LINEAR_WEBHOOK_SECRET` and sends Inngest a `factory/linear.changed` event (`orchestrator/src/linear-webhook.ts`).
    - That event runs **`pick-up-tickets`**, debounced to one pass 5 seconds after the last change in a burst. The webhook only says when to look: each pass fetches every opted-in ticket changed since its `updatedAt` cursor, so a missed delivery loses nothing.
    - A backstop cron sends the same event every 10 minutes, for deliveries Linear dropped or that arrived mid-deploy. Without `LINEAR_WEBHOOK_SECRET` the endpoint answers 404 and the backstop alone picks tickets up.
-   - A ticket opts in only when it has an **`oscar-factory:<task>` label** (`oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:resolve`, `oscar-factory:fix-ci`, `oscar-factory:deepen-scan` or `oscar-factory:deepen-refute`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
+   - A ticket opts in only when it has an **`oscar-factory:<task>` label** (`oscar-factory:implement`, `oscar-factory:review`, `oscar-factory:explore`, `oscar-factory:merge`, `oscar-factory:resolve`, `oscar-factory:fix-ci`, `oscar-factory:deepen-scan`, `oscar-factory:deepen-refute` or `oscar-factory:qa`) and is **assigned to Oscar** (the owner of `LINEAR_API_KEY`). Every Linear name the factory creates (labels, comment markers) is prefixed `oscar-`, since the factory is personal.
    - **The labels are the ticket's state**, and `orchestrator/src/transitions.ts` is the one place that changes them:
      - **Pickup.** `pick-up-tickets` adds **`oscar-factory:in-progress`** and leaves the task label on, so Linear shows which stage each ticket is in. While the run works, it doesn't start another on the ticket.
      - **A run ends.** The factory removes in-progress and the task label. It then either adds the next task's label from the chain, or adds **`oscar-factory:human-needed`** so the tickets waiting on Oscar are one filter away. The chain: an `explore` run with an easy-call verdict hands off to `oscar-factory:implement`, an `implement` run that pushed commits hands off to `oscar-factory:fix-ci`, which hands off to `oscar-factory:review` once CI is green (and fixes it, up to 3 times, while it's red), and a `review` run that posted on a PR hands off to `oscar-factory:merge`. A `merge` run that merged ends the chain with no factory label at all.
@@ -121,7 +121,6 @@ The **`sweep-runs` cron** (every 5 minutes) cleans up after runs Inngest has los
 - Prove Claude Code's OAuth token works through the Daytona Secret swap. Make `bunny-stack` append to `NODE_EXTRA_CA_CERTS` instead of overwriting it.
 - Confirm `daytona snapshot push` exists, so the snapshot needs no third-party registry.
 - Gaps in the Bunny stack:
-  - no PrinceXML, so PDFs fail
   - the login, widget and admin routes are missing
   - the integration tests aren't wired up
   - `bin/verify*` needs a native version

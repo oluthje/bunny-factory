@@ -87,7 +87,7 @@ The runner never holds the Linear key: the run writes its evidence files and a f
 | Guest checkout, card | ✅ Passed |
 | Coupon then plan change | ❌ QA-4 (links to the defect's comment) |
 | Refund a paid invoice | ❌ Known: REC-201 #4, still reproduces |
-| Download invoice PDF | ⛔ Blocked: no PrinceXML |
+| Pay with a third-party gateway | ⛔ Blocked: third-party APIs unreachable |
 | ... | ⏭ Not reached (time) |
 
 The commits tested go under the table, one SHA per repo. "Not reached" keeps a short run honest, and tells `qa-plan` its QA scopes are too big.
@@ -155,8 +155,7 @@ A sweep (the pattern of `bulk-batches`) notices when every filed QA scope of a `
 
 What production does that the runner can't. Both prompts carry this list; a flow stopped by one is blocked.
 
-- The login, widget, metabase and admin routes return 502: those services aren't in the stack.
-- PDF rendering fails: no PrinceXML.
+- The login, widget, metabase and admin routes return 502: those services aren't in the stack. Login itself works: it lives in app at `/app/login`.
 - Third-party APIs are unreachable.
 - No GitHub or Linear access.
 - **Gateway rate limits.** Production Kong limits `/graphql` per token; Caddy doesn't. Rails' own limits (token issuance, `/oauth/register`) do run.
@@ -199,7 +198,7 @@ A reproduced failure of a flow, or a place where the UI or API breaks its docume
 _Avoid_: bug, issue, finding, problem
 
 **Runner gap**:
-Something production does that the runner can't, such as rendering PDFs. A flow stopped by one is **blocked**, never a defect.
+Something production does that the runner can't, such as calling a third-party API. A flow stopped by one is **blocked**, never a defect.
 _Avoid_: known gap, limitation, unsupported
 
 **QA verdict**:

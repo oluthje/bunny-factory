@@ -7,9 +7,10 @@ import { explore } from "./explore/index.ts";
 import { fixCi } from "./fix-ci/index.ts";
 import { implement } from "./implement/index.ts";
 import { merge } from "./merge/index.ts";
+import { qa } from "./qa/index.ts";
 import { resolve } from "./resolve/index.ts";
 import { review } from "./review/index.ts";
 
-export type TaskName = "implement" | "review" | "explore" | "merge" | "deepen-scan" | "deepen-refute" | "resolve" | "fix-ci";
+export type TaskName = "implement" | "review" | "explore" | "merge" | "deepen-scan" | "deepen-refute" | "resolve" | "fix-ci" | "qa";
 
-export const TASKS: Record<TaskName, Task> = { implement, review, explore, merge, "deepen-scan": deepenScan, "deepen-refute": deepenRefute, resolve, "fix-ci": fixCi };
+export const TASKS: Record<TaskName, Task> = { implement, review, explore, merge, "deepen-scan": deepenScan, "deepen-refute": deepenRefute, resolve, "fix-ci": fixCi, qa };

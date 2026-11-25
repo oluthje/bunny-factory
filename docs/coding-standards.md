@@ -37,7 +37,7 @@ Inngest replays a run function from the top for every step, and feeds each finis
 
 ## Factory comments
 
-11. **Every comment the factory posts starts with `linearComment`'s marker.** A comment the factory reads back later carries a tag on its marker line (today only `explore findings`). Each tag is a constant in the module that posts it, and the module that reads it imports the constant. Tag only a comment that holds the real result: never a failure note, which would hide the last real result.
+11. **Every comment the factory posts starts with `linearComment`'s marker.** A comment the factory reads back later carries a tag on its marker line (today `explore findings`, `deepen-refute conclusion`, `qa defect`, `qa recheck` and `qa coverage`). Each tag is a constant in the module that posts it, and the module that reads it imports the constant. Tag only a comment that holds the real result: never a failure note, which would hide the last real result.
 
 ## Prompts
 
