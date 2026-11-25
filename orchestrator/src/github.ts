@@ -1,6 +1,6 @@
 import { config } from "./config.ts";
 import type { PrComment, ReviewThread } from "./comments.ts";
-import type { CheckRun, CommitStatus } from "./checks.ts";
+import { PASSED, type CheckRun, type CommitStatus, type FailedCheck } from "./checks.ts";
 
 async function gh<T>(method: string, pathname: string, body?: unknown): Promise<T> {
   const res = await fetch(`https://api.github.com${pathname}`, {
@@ -342,6 +342,51 @@ export async function commitChecks(repo: string, sha: string): Promise<{ runs: C
     runs: runs.check_runs.map((r) => ({ name: r.name, status: r.status, conclusion: r.conclusion })),
     statuses: combined.statuses.map((s) => ({ context: s.context, state: s.state })),
   };
+}
+
+/**
+ * Every check that failed on the commit (the latest run of each name), with why: its summary, and
+ * for a GitHub Actions job its raw log, or null when the log can't be read (expired, or not Actions).
+ */
+export async function failedChecks(repo: string, sha: string): Promise<FailedCheck[]> {
+  const owner = config.githubOwner;
+  type Run = {
+    id: number;
+    name: string;
+    status: string;
+    conclusion: string | null;
+    html_url: string | null;
+    app: { slug: string } | null;
+    output: { title: string | null; summary: string | null; text: string | null };
+  };
+  const runs = await gh<{ check_runs: Run[] }>("GET", `/repos/${owner}/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`);
+  const combined = await gh<{ statuses: { context: string; state: string; target_url: string | null; description: string | null }[] }>(
+    "GET",
+    `/repos/${owner}/${repo}/commits/${sha}/status?per_page=100`,
+  );
+  const failedRuns = runs.check_runs.filter((r) => r.status === "completed" && !PASSED.includes(r.conclusion ?? ""));
+  return [
+    ...(await Promise.all(
+      failedRuns.map(async (r) => ({
+        name: r.name,
+        url: r.html_url,
+        summary: [r.output.title, r.output.summary, r.output.text].filter(Boolean).join("\n\n"),
+        log: r.app?.slug === "github-actions" ? await jobLog(repo, r.id).catch(() => null) : null,
+      })),
+    )),
+    ...combined.statuses
+      .filter((s) => s.state === "failure" || s.state === "error")
+      .map((s) => ({ name: s.context, url: s.target_url, summary: s.description ?? "", log: null })),
+  ];
+}
+
+/** A GitHub Actions job's raw log: its check run's id is the job's. GitHub answers with a redirect to the file. */
+async function jobLog(repo: string, jobId: number): Promise<string> {
+  const res = await fetch(`https://api.github.com/repos/${config.githubOwner}/${repo}/actions/jobs/${jobId}/logs`, {
+    headers: { Authorization: `Bearer ${config.ghToken()}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "bunny-factory" },
+  });
+  if (!res.ok) throw new Error(`GitHub job log ${repo}/${jobId}: ${res.status}`);
+  return res.text();
 }
 
 /**

@@ -16,8 +16,14 @@ export type CiState = {
   checks: number;
 };
 
+/**
+ * A check that failed on a commit, with what the git host says about why: a check run's own
+ * summary, and for a GitHub Actions job its raw log; a commit status has only its description.
+ */
+export type FailedCheck = { name: string; url: string | null; summary: string; log: string | null };
+
 /** A completed check run with one of these didn't fail. */
-const PASSED = ["success", "skipped", "neutral"];
+export const PASSED = ["success", "skipped", "neutral"];
 
 /**
  * CI on one commit. Red when any check failed, even with others still running; pending while any

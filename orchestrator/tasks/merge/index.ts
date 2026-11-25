@@ -10,7 +10,8 @@
 // before the CI wait, and again right before merging (gates.ts `stale`, `resolveRound`).
 // The tree of its prompt is in tasks/README.md.
 import { isBulkBranch } from "../../src/bulk.ts";
-import { ciState, combineCi, type CiState } from "../../src/checks.ts";
+import { ciState } from "../../src/checks.ts";
+import { CI_WAIT_MINUTES, waitForCi } from "../../src/ci-wait.ts";
 import { config } from "../../src/config.ts";
 import { commentOnPr, commitChecks, deleteBranch, filesUnder, getPrBody, mergePr, type MergeMethod, prAddedFiles, prComments, prReviews, prState, reviewThreads } from "../../src/github.ts";
 import { NO_AUTO_MERGE_LABEL } from "../../src/labels.ts";
@@ -37,14 +38,6 @@ export const merge: Task = {
   prepare,
 };
 
-/** How long to wait for CI, polling every CI_POLL_MINUTES, before handing the ticket to Oscar. */
-const CI_POLLS = 15;
-const CI_POLL_MINUTES = 2;
-/**
- * Polls a PR with no checks at all counts as still pending: right after a push, GitHub hasn't
- * registered the checks yet. Past them, no checks means the repo runs none on this PR.
- */
-const NO_CHECKS_GRACE_POLLS = 3;
 /** Tries per merge, for a git host error that may pass: a 5xx or a dropped connection. */
 const MERGE_TRIES = 3;
 
@@ -79,17 +72,8 @@ async function prepare({ step, runId, ticket, branch, base, heads, openPrs, time
 
   // CI on the heads the agent will read, until it's done. Red, or still running when the wait
   // runs out, goes to Oscar without an agent.
-  let ci: CiState = { state: "pending", failing: [], pending: [], checks: 0 };
-  for (let i = 0; i < CI_POLLS; i++) {
-    const each = await step.run(`ci-poll-${i}`, async () =>
-      Promise.all(prRepos.map(async (repo) => ciState(await commitChecks(repo, heads[repo]!)))),
-    );
-    ci = combineCi(each);
-    const unseen = each.some((s) => s.checks === 0);
-    if ((ci.state !== "pending" && !(unseen && i < NO_CHECKS_GRACE_POLLS)) || i === CI_POLLS - 1) break;
-    await step.sleep(`ci-wait-${i}`, `${CI_POLL_MINUTES}m`);
-  }
-  if (ci.state !== "green") return stop(ciStopText(ci, (CI_POLLS - 1) * CI_POLL_MINUTES));
+  const ci = await waitForCi(step, prRepos, heads);
+  if (ci.state !== "green") return stop(ciStopText(ci, CI_WAIT_MINUTES));
 
   const context = await step.run("gather-context", async () => ({
     prs: await Promise.all(
