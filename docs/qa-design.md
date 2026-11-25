@@ -40,7 +40,7 @@ Oscar does the partitioning: `qa-plan` proposes, he accepts, edits or drops. He 
 - **Partitions by product area**, using the release changes to decide where depth goes. Every flow belongs to exactly one QA scope.
 - **Leaves out what only a runner gap would test.** A flow that sits entirely behind one is not proposed; it goes in the comment's **Needs a human** section, which the QA verdict repeats.
 - **First run:** posts the proposals and waits on Oscar (`next: "human"`).
-- **A later run:** reads Oscar's reply to the last proposals. Its structured pass returns the accepted QA scopes; the orchestrator files each as a sub-ticket of the `qa-plan` ticket, labelled `oscar-factory:qa`. QA scopes Oscar didn't mention stay proposals. The loop cap (5 runs) bounds the back-and-forth.
+- **A later run:** reads Oscar's reply to the last proposals. Its structured pass returns the accepted QA scopes; the orchestrator files each as a sub-ticket of the `qa-plan` ticket, labelled `oscar-factory:qa`. QA scopes Oscar didn't mention stay proposals. The comment lists the filed QA scopes first, a linked line each, then the ones still proposed. While any is still proposed the run waits on Oscar; once none is, it ends `next: "done"`. The loop cap (5 runs) bounds the back-and-forth.
 
 A QA scope's description, proposed or filed:
 

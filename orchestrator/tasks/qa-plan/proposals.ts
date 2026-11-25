@@ -109,21 +109,36 @@ export function scopeDescription(s: Scope, p: Proposals, branch: string, filed: 
   });
 }
 
-/** The proposals comment: each QA scope folded under its number and title, filed ones linked, then what needs a human. */
+/** Whether any QA scope still waits on Oscar: one neither filed nor accepted. Accepted ones are filed by the run that posts. */
+export const anyProposed = (p: Proposals, filed: Filed): boolean => p.scopes.some((s) => !filedAs(s, filed));
+
+/**
+ * The proposals comment: the filed QA scopes first, one linked line each, then the ones still
+ * proposed, each folded under its number and title, then what needs a human, and what to reply
+ * while anything is still proposed.
+ */
 export function renderProposals(p: Proposals, branch: string, filed: Filed, written: string): string {
-  const filedCount = p.scopes.filter((s) => filedAs(s, filed)).length;
-  const head = `**QA scopes** for \`${branch}\`: ${p.scopes.length} proposed, ${filedCount} filed.`;
-  const folds = p.scopes.map((s) => {
-    const ticket = filedAs(s, filed);
-    if (!ticket) return `+++ ${s.number}. ${scopeTitle(s.area)}\n\n${scopeDescription(s, p, branch, filed)}\n\n+++`;
-    // A filed QA scope lives on its ticket: change it there.
-    const state = ticket.cancelled ? "cancelled" : "filed";
-    return `+++ ${s.number}. ${scopeTitle(s.area)} · ${state} as ${ticket.identifier}\n\n[${ticket.identifier}](${ticket.url}): its description is the QA scope now.\n\n+++`;
-  });
+  const isFiled = p.scopes.filter((s) => filedAs(s, filed));
+  const proposed = p.scopes.filter((s) => !filedAs(s, filed));
+  const counts = [isFiled.length ? `${isFiled.length} filed` : "", proposed.length ? `${proposed.length} ${isFiled.length ? "still proposed" : "proposed"}` : ""].filter(Boolean).join(", ");
+  const head = `**QA scopes** for \`${branch}\`: ${counts}.${proposed.length ? "" : " Nothing is left to accept."}`;
+  // A filed QA scope lives on its ticket: change it there.
+  const filedList = isFiled.length
+    ? `**Filed**\n\n${isFiled
+        .map((s) => {
+          const t = filedAs(s, filed)!;
+          return `- ${s.number}. ${scopeTitle(s.area)}: [${t.identifier}](${t.url})${t.cancelled ? " (cancelled)" : ""}`;
+        })
+        .join("\n")}`
+    : "";
+  const folds = proposed.map((s) => `+++ ${s.number}. ${scopeTitle(s.area)}\n\n${scopeDescription(s, p, branch, filed)}\n\n+++`);
+  const proposedHead = proposed.length && isFiled.length ? `**Still proposed**: ${proposed.map((s) => s.number).join(", ")}` : "";
   const needsHuman = `**Needs a human**\n\n${p.needsHuman.length ? p.needsHuman.map((n) => `- ${n}`).join("\n") : "None."}`;
-  const ask = "Reply with what to accept, change or drop, such as “Accept 1, 2, 4. Drop 3. For 2 also cover coupon stacking”, then add `oscar-factory:qa-plan` again.";
+  const ask = proposed.length
+    ? "Reply with what to accept, change or drop, such as “Accept 1, 2, 4. Drop 3. For 2 also cover coupon stacking”, then add `oscar-factory:qa-plan` again."
+    : "";
   // The proposals as the agent wrote them carry its Decisions and Gaps.
-  return [head, ...folds, needsHuman, ask, `+++ Run notes: the proposals as written\n\n${written.trim()}\n\n+++`].join("\n\n");
+  return [head, filedList, proposedHead, ...folds, needsHuman, ask, `+++ Run notes: the proposals as written\n\n${written.trim()}\n\n+++`].filter(Boolean).join("\n\n");
 }
 
 /** Oscar's own comment: his, and not one the factory posted as him. */

@@ -72,7 +72,7 @@ Then:
 The calls you made with no human to ask, one line each, or `None.`
 ```
 
-After you exit, the factory resumes this session and asks for the QA scopes as structured output. It files each accepted QA scope not filed yet as a sub-ticket labelled `oscar-factory:qa`, which starts its run, posts the proposals as one comment, and the ticket waits on Oscar.
+After you exit, the factory resumes this session and asks for the QA scopes as structured output. It files each accepted QA scope not filed yet as a sub-ticket labelled `oscar-factory:qa`, which starts its run, posts the proposals as one comment. While any QA scope is still proposed, the ticket waits on Oscar.
 
 ## Finish line
 
