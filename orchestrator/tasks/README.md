@@ -31,7 +31,7 @@ Starts from: the `oscar-factory:implement` label. The factory picks one of two m
 - **create** when the ticket's branch isn't on GitHub yet: it branches from `main`.
 - **update** when it is: it builds on the branch and acts on Oscar's feedback, with the ticket still the spec. The feedback is Oscar's unresolved review threads where Oscar has the last word, plus Oscar's PR comments and ticket comments. Where an item contradicts the ticket, the agent follows the item and records the conflict as a decision.
 
-Ends with: commits and a PR body. The factory pushes without force, opens a draft PR per newly changed repo, and replaces the body of the open ones. On an update it also posts a reply on each thread. If the run pushed commits, the ticket's label becomes `oscar-factory:review`.
+Ends with: commits and a PR body. The factory pushes without force, opens a draft PR per newly changed repo, and replaces the body of the open ones. A repo whose branch ends with no diff from its base gets no PR (an update that reverted an earlier attempt leaves one). On an update it also posts a reply on each thread. If the run left a diff in a repo, the ticket's label becomes `oscar-factory:review`.
 
 ```
 implement/prompt.md          one prompt for both modes: {{mode}}, {{start}} and {{feedback}} differ
@@ -64,7 +64,7 @@ implement/extract.md          update only, and only with review threads: not cal
 
 Starts from: the `oscar-factory:review` label, which an `implement` run that pushed commits sets, or Oscar does.
 
-Ends with: fix commits and a review file. The factory pushes the fixes, posts the review, and marks the PRs ready for review. If it posted on a PR, the ticket's label becomes `oscar-factory:merge`, whatever the verdict: merge weighs the findings itself. With no PR to post on, the ticket waits on Oscar.
+Ends with: fix commits and a review file. The factory pushes the fixes, posts the review, and marks the PRs ready for review, skipping any closed during the run. If it posted on a PR, the ticket's label becomes `oscar-factory:merge`, whatever the verdict: merge weighs the findings itself. With no PR to post on, the ticket waits on Oscar.
 
 It fixes only the findings it's sure of and comments on the rest. It runs specs, so it starts the Bunny stack and gets `factory-stack`. It gets no browser.
 
