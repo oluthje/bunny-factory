@@ -2,6 +2,8 @@
 
 Each run gets its task's prompt (and extract prompt), its task's skills and Claude Code's settings, nothing else. Changing any of them needs no snapshot rebuild.
 
+The prompt's Linear uploads come along too: a mockup in the ticket or a screenshot in a comment needs the Linear API key, which the runner never holds. The orchestrator downloads each one to `~/run/linear-uploads/` and points the prompt at that copy (`src/linear-uploads.ts`).
+
 ```
 runner-files/
 ├── skills/<skill>/ the skills runs upload to ~/.claude/skills/; which ones each task gets is its `skills` in tasks/<task>/index.ts

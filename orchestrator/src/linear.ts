@@ -163,6 +163,22 @@ export async function uploadFile(data: Buffer, filename: string, contentType: st
   return target.assetUrl;
 }
 
+/**
+ * Downloads a file from Linear's storage (`uploads.linear.app`), which answers 401 without the API
+ * key. Null when it fails or is bigger than `maxBytes`: the caller leaves the link as it was.
+ */
+export async function downloadUpload(url: string, maxBytes: number): Promise<{ data: Buffer; contentType: string | null } | null> {
+  try {
+    const res = await fetch(url, { headers: { Authorization: config.linearApiKey() } });
+    if (!res.ok) return null;
+    if (Number(res.headers.get("content-length") ?? 0) > maxBytes) return null;
+    const data = Buffer.from(await res.arrayBuffer());
+    return data.length > maxBytes ? null : { data, contentType: res.headers.get("content-type") };
+  } catch {
+    return null;
+  }
+}
+
 /** The ticket's labels now, by name: the poller's copy may be minutes old by the time a run ends. */
 export async function ticketLabels(ticketId: string): Promise<string[]> {
   return (await (await linear().issue(ticketId)).labels()).nodes.map((l) => l.name);
