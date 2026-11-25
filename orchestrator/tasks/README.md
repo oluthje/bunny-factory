@@ -21,7 +21,7 @@ The engine that runs every task is in `src/`, and knows no task by name: the con
 
 Runs start only from a ticket's `oscar-factory:<task>` label, and every run ends by moving the ticket's labels on. A task with a `clock` doesn't change that: on its cron the factory files a ticket with the task's label (`src/functions/clock.ts`), and `pick-up-tickets` starts the run. Each task decides what comes next (its `conclude` sets `next`: a task, `human` to wait on Oscar, or `done`), and `src/transitions.ts` moves the labels, holding back any run that didn't succeed. A task's `prepare` can also end the run before any runner, with a `Stop`.
 
-The chain: `explore` (easy call) → `implement` (pushed commits) → `review` (posted on a PR) → `merge` (merged: done). When a PR conflicts with its base, or is behind it, `merge` hands it to `resolve`, which merges the base in and hands it straight back to `merge`.
+The chain: `explore` (easy call) → `implement` (pushed commits) → `fix-ci` (CI green) → `review` (posted on a PR) → `merge` (merged: done). While CI is red, `fix-ci` fixes it and hands the ticket back to itself to wait for CI again, up to 3 fixes per `implement` run. When a PR conflicts with its base, or is behind it, `merge` hands it to `resolve`, which merges the base in and hands it straight back to `merge`.
 
 The deepen tasks sit before it: `deepen-scan` (files a ticket per strong candidate) → `deepen-refute` on each (a verdict, then waits on Oscar). Oscar grills through a candidate with `/factory-deepen-grill` and hands its ticket to `implement`, or cancels it.
 
@@ -31,7 +31,7 @@ Starts from: the `oscar-factory:implement` label. The factory picks one of two m
 - **create** when the ticket's branch isn't on GitHub yet: it branches from `main`.
 - **update** when it is: it builds on the branch and acts on Oscar's feedback, with the ticket still the spec. The feedback is Oscar's unresolved review threads where Oscar has the last word, plus Oscar's PR comments and ticket comments. Where an item contradicts the ticket, the agent follows the item and records the conflict as a decision.
 
-Ends with: commits and a PR body. The factory pushes without force, opens a draft PR per newly changed repo, and replaces the body of the open ones. A repo whose branch ends with no diff from its base gets no PR (an update that reverted an earlier attempt leaves one). On an update it also posts a reply on each thread. If the run left a diff in a repo, the ticket's label becomes `oscar-factory:review`.
+Ends with: commits and a PR body. The factory pushes without force, opens a draft PR per newly changed repo, and replaces the body of the open ones. A repo whose branch ends with no diff from its base gets no PR (an update that reverted an earlier attempt leaves one). On an update it also posts a reply on each thread. If the run left a diff in a repo, the ticket's label becomes `oscar-factory:fix-ci`, which waits for CI before review.
 
 ```
 implement/prompt.md          one prompt for both modes: {{mode}}, {{start}} and {{feedback}} differ
@@ -60,9 +60,32 @@ implement/extract.md          update only, and only with review threads: not cal
                                     2 times. It posts each reply on its thread.
 ```
 
+### `fix-ci`
+
+Starts from: the `oscar-factory:fix-ci` label, which an `implement` run that pushed commits sets, a `fix-ci` run that pushed a fix sets again, or Oscar does.
+
+Ends with: CI green and the ticket handed to `review`, or a fix pushed and the ticket back on `fix-ci`. Before any runner, `prepare` waits for CI on every PR as `merge` does (`src/ci-wait.ts`: polls every 2 minutes for up to 28). Green hands the ticket to `oscar-factory:review` with no runner; still running when the wait runs out goes to Oscar. A sub-ticket's PR into its bulk branch has no CI, and goes straight to review.
+
+On red, the agent gets each failed check with its log up to the last error (`logs.ts`; GitHub Actions jobs only, other checks give their summary). It reproduces the failure, checks whether `origin/<base>` fails the same way, fixes it in the ticket's code, and commits. The factory pushes without force, posts the fix on each PR, and hands the ticket back to `oscar-factory:fix-ci`, which waits for CI on the new head. Nothing committed, a timeout, or a failure the base has too waits on Oscar. Before any runner, a check that fails on the base's head as well stops for Oscar (gates.ts `alsoRedOnBase`), and so does red CI once 3 fix runs (`FIX_ROUNDS`) since the last `implement` run haven't made it green.
+
+It gets the stack for running checks, no browser, and 30 minutes. It has no structured pass.
+
+```
+fix-ci/prompt.md             each red PR's failed checks, with their log excerpts, and the fix round
+├── 1. factory-rules
+├── 2. factory-stack                for running the failed checks
+├── 3. reproduce                    the command CI ran, from the repo's CI config, on the branch
+├── 4. whose failure                the same command on origin/<base>: red there too stops for Oscar
+├── 5–6. fix and check              the smallest fix in this ticket's code; never skip or loosen a test
+├── 7. commit                       each fix on its own, with the ticket prefix
+├── 8. the fix                      per check: cause, change, what was run; **Decision:** marks
+└── Finish line                     the checks pass locally and git is clean, or nothing committed and
+                                    the fix file says why
+```
+
 ### `review`
 
-Starts from: the `oscar-factory:review` label, which an `implement` run that pushed commits sets, or Oscar does.
+Starts from: the `oscar-factory:review` label, which a `fix-ci` run that found CI green sets, or Oscar does.
 
 Ends with: fix commits and a review file. The factory pushes the fixes, posts the review, and marks the PRs ready for review, skipping any closed during the run. If it posted on a PR, the ticket's label becomes `oscar-factory:merge`, whatever the verdict: merge weighs the findings itself. With no PR to post on, the ticket waits on Oscar.
 

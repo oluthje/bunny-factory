@@ -134,8 +134,9 @@ async function prepare({ step, runId, ticket, branch, base, localDir, timeLimitM
           prUrls.length > 0 ? null : agentBody.trim(),
           evidence.linearMarkdown,
         ].filter((l): l is string => Boolean(l));
-        // New commits always get a review, whether they opened the PR or updated it.
-        await finish({ runId, ticketId: ticket.id, end: { status, next: changed.length > 0 ? "review" : "human" }, text: lines.join("\n\n"), record: { prUrls } });
+        // New commits always get a review, whether they opened the PR or updated it, once CI is green:
+        // fix-ci waits for it, and fixes it when it's red.
+        await finish({ runId, ticketId: ticket.id, end: { status, next: changed.length > 0 ? "fix-ci" : "human" }, text: lines.join("\n\n"), record: { prUrls } });
       });
       return { status, prUrls };
     },
