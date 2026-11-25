@@ -1,5 +1,6 @@
 // A QA scope's description: qa-plan writes it for every QA scope it proposes and files, and qa reads
-// its `**Branch:**` line for the branch to test, so this module is qa's contract with qa-plan.
+// its `**Branch:**` line for the branch to test and its `**Interface:**` line for whether the UI is
+// in it, so this module is qa's contract with qa-plan.
 // Pure: no I/O, so it is unit-tested in scope.test.ts.
 
 /** The `**Branch:** <name>` line, on a line of its own. */
@@ -10,11 +11,38 @@ export function branchOf(description: string): string | null {
   return BRANCH_LINE.exec(description)?.[1] ?? null;
 }
 
+/** The `**Interface:** UI | API | UI and API` line. */
+const INTERFACE_LINE = /^\s*\*\*Interface:\*\*\s*(UI and API|UI|API)\s*$/m;
+
+/** Whether a QA scope covers the UI, the API or both, or null when its description doesn't say (a hand-filed one). */
+export function interfaceOf(description: string): ScopeInterface | null {
+  return (INTERFACE_LINE.exec(description)?.[1] as ScopeInterface | undefined) ?? null;
+}
+
+export type ScopeInterface = "UI" | "API" | "UI and API";
+
+/** How long a qa run gets: qa-plan sizes each QA scope to fit it. */
+export const QA_TIME_LIMIT_MINUTES = 90;
+
+/** What a flow costs a qa run, by where it's walked: the browser is slower, and a defect there gets a video. */
+export const FLOW_MINUTES = { UI: 8, API: 4 } as const;
+
+/** The minutes a QA scope's flows may add up to: the rest of the run is setup, the code hunt and the findings. */
+export const SCOPE_BUDGET_MINUTES = 64;
+
+/** A flow's mark, the `(UI)` or `(API)` that ends it, or null when it has none (a hand-filed QA scope). */
+export function markOf(flow: string): keyof typeof FLOW_MINUTES | null {
+  return (/\((UI|API)\)\s*$/.exec(flow)?.[1] as keyof typeof FLOW_MINUTES | undefined) ?? null;
+}
+
+/** What a QA scope's marked flows cost a qa run, in minutes. */
+export const scopeMinutes = (flows: readonly string[]) => flows.reduce((sum, f) => sum + (FLOW_MINUTES[markOf(f) ?? "UI"]), 0);
+
 /** What a QA scope's description says. `owner` names the QA scope that owns a flow left out here. */
 export type ScopeDescription = {
   branch: string;
   area: string;
-  interface: "UI" | "API" | "UI and API";
+  interface: ScopeInterface;
   flows: readonly string[];
   releaseChanges: readonly string[];
   ownedElsewhere: readonly { what: string; owner: string }[];

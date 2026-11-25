@@ -39,7 +39,8 @@ Ends with: commits and a PR body. The factory pushes without force, opens a draf
 implement/prompt.md          one prompt for both modes: {{mode}}, {{start}} and {{feedback}} differ
 ├── 1. factory-rules                headless decisions, time budget, origin/main as the fixed point, gaps
 ├── 2. factory-stack                the repos and the running Bunny stack: services, specs, login, runner gaps
-├── 3. factory-evidence             steps 1–2: classify the change, capture the "before" on origin/main
+├── 3. factory-capture              how to take screenshots and videos, and check them
+│   factory-evidence             steps 1–2: classify the change, capture the "before" on origin/main
 │                                   (an update checks out origin/main to capture it, then returns)
 ├── 4. implement                    the ticket as the spec; an update acts on the feedback on top of it;
 │   │                               its closing code-review is step 5
@@ -271,7 +272,9 @@ qa-plan/prompt.md            the focus (the ticket's description), the last prop
 ├── 1. factory-rules
 ├── 2. map the product              areas and flows, from routes, pages, schema.graphql and docs-developer
 ├── 3–4. split by area              one area per QA scope, every flow in exactly one; depth where the release
-│                                   changes are; about 6–12 flows each; runner-gap-only flows → Needs a human
+│                                   changes are; one thing to check a flow, marked (UI) or (API), riskiest
+│                                   first; sized to one qa run (tasks/qa/scope.ts's budget, checked by the
+│                                   structured pass); runner-gap-only flows → Needs a human
 ├── 5. a later run                  revise what Oscar asked; accepted stays accepted; dropped leaves
 ├── 6. the proposals                a section per QA scope in the QA scope's own shape, then Needs a human /
 │                                   Decisions (and Gaps)
@@ -288,27 +291,30 @@ qa-plan/extract.md           not called by the agent: the factory resumes the se
 
 Starts from: the `oscar-factory:qa` label, on a QA scope `qa-plan` filed, or a ticket Oscar files by hand with a QA scope as its description: a `**Branch:**` line, the area, its flows, and what other QA scopes own.
 
-Ends with: findings and evidence, and no commits. The factory uploads the evidence the structured pass names and posts one comment per new defect, tagged `qa defect` and numbered on from the ticket's last (`QA-4`), then the coverage summary, tagged `qa coverage`: a row per flow, linked to its evidence or its defect, the commits tested, and the passing evidence and the suspects folded. A defect that matched a known one gets no comment of its own: a reply, tagged `qa recheck`, goes in that defect's thread or on its bug ticket, "Still reproduces on" the branch and its commits, with the severity it has now. A known defect whose steps passed gets "No longer reproduces on", fixed (naming the release change) or not reproduced. A ticket that got a new defect gets the flag label `oscar-factory:qa-defects`, never taken off. Whatever it found, the ticket then waits on Oscar. A timed-out run with readable coverage posts it too: its unreached flows say how far it got.
+Ends with: findings and evidence, and no commits. The factory uploads the evidence the structured pass names and posts one comment per new defect, tagged `qa defect` and numbered on from the ticket's last (`QA-4`), then the coverage summary, tagged `qa coverage`: a row per flow, linked to its evidence or its defect, a **UI not covered** line when the QA scope's `**Interface:**` includes the UI and UI flows went unwalked (the QA verdict lists it under Needs a human), a **No picture** line naming the UI flows walked without a screenshot or video, the commits tested, and the passing evidence and the suspects folded. A defect that matched a known one gets no comment of its own: a reply, tagged `qa recheck`, goes in that defect's thread or on its bug ticket, "Still reproduces on" the branch and its commits, with the severity it has now. A known defect whose steps passed gets "No longer reproduces on", fixed (naming the release change) or not reproduced. A ticket that got a new defect gets the flag label `oscar-factory:qa-defects`, never taken off. Whatever it found, the ticket then waits on Oscar. A timed-out run with readable coverage posts it too: its unreached flows say how far it got.
 
 Before any runner, the run's base is the ticket's `**Branch:**` line (`Task.base`; `main` without one), and `prepare` gathers:
 - the release changes: each repo's first-parent commits in `production..<branch>`, with their PRs and the tickets they name, up to 100 per repo (`release.ts`). None on `production` itself: a whole-area run.
 - the known defects (`defects.ts`): the open defects on every ticket with `oscar-factory:qa-defects` that isn't cancelled (an open defect's latest recheck doesn't say it no longer reproduces), and the newest 100 open `Type: Bug` tickets. At most 100 flagged tickets are read.
 - the runner gaps, from `factory-stack`'s "Runner gaps" section, so the list lives in one place.
 
-It gets the stack and the browser, `branch: "none"` on its base, and 60 minutes.
+It gets the stack and the browser, `branch: "none"` on its base, and 90 minutes.
 
 ```
 qa/prompt.md                 the QA scope (the ticket's description), the release changes, the known defects,
                              the runner gaps
 ├── 1. factory-rules
 ├── 2. factory-stack                the stack, login, and its Runner gaps
+│   factory-capture              how to take screenshots and videos, and check them
 ├── 3. plan                         the QA scope's flows first, then any from the focus and the release changes;
-│                                   a known defect in the area with no flow gets one
+│                                   a known defect in the area with no flow gets one; each flow UI or API,
+│                                   the UI flows walked first
 ├── 4. the code hunt                read-only subagents over the release changes, in parallel: suspects only;
 │                                   the browser, API and database stay with the main agent
 ├── 5. walk every flow              UI in the browser; API as an external client (client credentials, bearer
 │                                   token, checked against schema.graphql and docs-developer); evidence for
-│                                   every result
+│                                   every result: a screenshot of every pass, and a screenshot or video of
+│                                   every defect or suspect a user can see; how to capture and check it
 ├── 6–8. failures, known defects,   reproduce and count, match known defects by behaviour, runner gaps are
 │   suspects                        blocked, severity; fixed or not reproduced; no evidence, no defect
 ├── 9. the findings                 fixed headings: Coverage / Defects / Known defects checked again /

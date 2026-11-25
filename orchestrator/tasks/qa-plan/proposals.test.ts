@@ -7,7 +7,7 @@ const scope = (over: Partial<Scope> = {}): Scope => ({
   number: 1,
   area: "Portal checkout",
   interface: "UI and API",
-  flows: ["Guest checkout with card, single plan"],
+  flows: ["Guest checkout with card, single plan (UI)", "Create a checkout session (API)"],
   releaseChanges: [],
   ownedElsewhere: [],
   accepted: false,
@@ -17,7 +17,21 @@ const proposals = (scopes: Scope[], needsHuman: string[] = []): Proposals => ({ 
 const output = (p: unknown) => JSON.stringify({ subtype: "success", structured_output: p });
 
 describe("parseProposals", () => {
-  const two = proposals([scope({ ownedElsewhere: [{ what: "Refunds", owner: 2 }] }), scope({ number: 2, area: "Billing", flows: ["Refund a paid invoice"] })]);
+  const two = proposals([scope({ ownedElsewhere: [{ what: "Refunds", owner: 2 }] }), scope({ number: 2, area: "Billing", interface: "UI", flows: ["Refund a paid invoice (UI)"] })]);
+
+  it("wants every flow of a QA scope still proposed marked, and the marks to match its interface", () => {
+    const bad = parseProposals(output(proposals([scope({ interface: "API", flows: ["Guest checkout (UI)", "Export invoices"] })])), false);
+    expect(!bad.ok && bad.error).toContain("end every flow in `(UI)` or `(API)`; `Export invoices` has neither.");
+    expect(!bad.ok && bad.error).toContain("its interface is `API`, but its flows are marked `UI`.");
+  });
+
+  it("refuses a QA scope still proposed that won't fit one qa run, and leaves an accepted one as Oscar accepted it", () => {
+    const flows = Array.from({ length: 9 }, (_, i) => `Card input ${i + 1} (UI)`);
+    const big = parseProposals(output(proposals([scope({ interface: "UI", flows })])), false);
+    expect(!big.ok && big.error).toContain("QA scope 1 (Portal checkout) is 72 minutes of flows, over the 64 a qa run has: split it in two.");
+    expect(parseProposals(output(proposals([scope({ interface: "UI", flows: flows.slice(1) })])), false).ok).toBe(true);
+    expect(parseProposals(output(proposals([scope({ accepted: true, flows: ["Unmarked, from before marks"] })])), true).ok).toBe(true);
+  });
 
   it("accepts proposals whose numbers, areas and owners add up", () => {
     expect(parseProposals(output(two), false)).toEqual({ ok: true, proposals: two });
@@ -34,7 +48,7 @@ describe("parseProposals", () => {
   });
 
   it("wants each flow in exactly one QA scope", () => {
-    const bad = parseProposals(output(proposals([scope(), scope({ number: 2, area: "Billing", flows: ["guest checkout with card, single plan"] })])), false);
+    const bad = parseProposals(output(proposals([scope(), scope({ number: 2, area: "Billing", flows: ["guest checkout with card, single plan (ui)"] })])), false);
     expect(!bad.ok && bad.error).toContain("is in QA scopes 1 and 2");
   });
 
@@ -49,7 +63,7 @@ describe("filing", () => {
   const p = proposals([
     scope({ accepted: true, ownedElsewhere: [{ what: "Invoice PDFs, refunds", owner: 2 }] }),
     scope({ number: 2, area: "Billing", accepted: true, flows: ["Refund a paid invoice"] }),
-    scope({ number: 3, area: "Settings", flows: ["Rename the company"] }),
+    scope({ number: 3, area: "Settings", interface: "UI", flows: ["Rename the company (UI)"] }),
   ]);
 
   it("files what Oscar accepted and isn't filed yet", () => {

@@ -7,7 +7,7 @@ import type { TicketComment } from "../../src/comments.ts";
 import type { FiledTicket } from "../../src/linear.ts";
 import { hasCommentTag, isFactoryComment } from "../../src/logic.ts";
 import { parseStructuredOutput, structuredRetryPrompt, toCliJsonSchema } from "../../src/structured.ts";
-import { renderScope, scopeTitle } from "../qa/scope.ts";
+import { markOf, renderScope, SCOPE_BUDGET_MINUTES, scopeMinutes, scopeTitle } from "../qa/scope.ts";
 
 /** The tag on the proposals comment's marker line: a later qa-plan run and the QA verdict read it. */
 export const PROPOSALS_TAG = "qa-plan proposals";
@@ -16,7 +16,10 @@ const scopeSchema = z.strictObject({
   number: z.number().int().min(1).describe("The QA scope's number. Keep the number an earlier proposal gave it."),
   area: z.string().min(1).describe("The product area, in a few words, such as `Portal checkout`. Unique: it names the filed ticket."),
   interface: z.enum(["UI", "API", "UI and API"]),
-  flows: z.array(z.string().min(1)).min(1).describe("Every flow in the area, one per item: each belongs to exactly one QA scope."),
+  flows: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe("Every flow in the area, one per item, riskiest first, each ending in `(UI)` or `(API)`: each belongs to exactly one QA scope."),
   releaseChanges: z.array(z.string()).describe('The release changes in this area, each as `api#1234 "Title" (REC-88)`. Empty when none.'),
   ownedElsewhere: z
     .array(z.strictObject({ what: z.string().min(1), owner: z.number().int().min(1).describe("The number of the QA scope that owns it.") }))
@@ -37,7 +40,11 @@ export type Scope = Proposals["scopes"][number];
 /** The JSON Schema handed to `claude --json-schema`. */
 export const proposalsJsonSchema = (): string => toCliJsonSchema(proposalsSchema);
 
-/** What the schema can't say: numbers and areas unique, owners real, and nothing accepted before Oscar has replied. */
+/**
+ * What the schema can't say: numbers and areas unique, owners real, nothing accepted before Oscar has
+ * replied, and each QA scope still proposed fits one qa run, its flows marked to match its interface.
+ * An accepted one is left as Oscar accepted it.
+ */
 function problems(p: Proposals, oscarReplied: boolean): string[] {
   const out: string[] = [];
   const numbers = p.scopes.map((s) => s.number);
@@ -54,6 +61,14 @@ function problems(p: Proposals, oscarReplied: boolean): string[] {
       if (o.owner === s.number || !numbers.includes(o.owner)) out.push(`QA scope ${s.number}: \`${o.what}\` is owned by ${o.owner}, which isn't another QA scope.`);
     }
     if (s.accepted && !oscarReplied) out.push(`QA scope ${s.number} is accepted, but Oscar hasn't replied to any proposals yet.`);
+    if (s.accepted) continue;
+    const unmarked = s.flows.filter((f) => !markOf(f));
+    if (unmarked.length) out.push(`QA scope ${s.number}: end every flow in \`(UI)\` or \`(API)\`; ${unmarked.map((f) => `\`${f}\``).join(", ")} ${unmarked.length === 1 ? "has" : "have"} neither.`);
+    const marks = new Set(s.flows.map(markOf).filter((m) => m !== null));
+    const iface = marks.size === 2 ? "UI and API" : [...marks][0];
+    if (iface && iface !== s.interface) out.push(`QA scope ${s.number}: its interface is \`${s.interface}\`, but its flows are marked \`${iface}\`.`);
+    const minutes = scopeMinutes(s.flows);
+    if (minutes > SCOPE_BUDGET_MINUTES) out.push(`QA scope ${s.number} (${s.area}) is ${minutes} minutes of flows, over the ${SCOPE_BUDGET_MINUTES} a qa run has: split it in two.`);
   }
   return out;
 }

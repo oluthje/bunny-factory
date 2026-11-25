@@ -14,10 +14,7 @@ A change that is invisible in the UI (an API-only change, a refactor) needs none
 
 ## 2. Capture the _before_, on the unchanged code
 
-Capture each screen or flow from step 1 with the Playwright MCP browser:
-
-- **Screenshot**: navigate, wait for the page to settle, then `browser_take_screenshot`.
-- **Video**: `browser_start_video`, perform the flow at a human pace, then `browser_stop_video`. Keep it short: only the steps that show the change.
+Capture each screen or flow from step 1 as `factory-capture` says.
 
 Use the same viewport, user and data you will use for the _after_, so the pair differs only by the change. Save each file in the evidence directory under a name that pairs it with its _after_: `before-<slug>.png` / `after-<slug>.png`, or `before-<slug>.webm` / `after-<slug>.webm`.
 
