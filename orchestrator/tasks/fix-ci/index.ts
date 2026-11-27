@@ -1,5 +1,6 @@
 // `fix-ci` stands between implement and review: it waits for CI on the ticket's PRs, and only
-// green CI goes on to review. Before any runner, it waits for CI as merge does (src/ci-wait.ts):
+// green CI goes on to review, or straight to merge, with the PRs marked ready, when Oscar's
+// `oscar-factory:skip-review` is on the ticket or its parent (gates.ts `skipReviewFrom`). Before any runner, it waits for CI as merge does (src/ci-wait.ts):
 // green hands the ticket to review, still running when the wait runs out goes to Oscar, and red
 // starts the agent with each failed check's log. The agent reproduces the failure, fixes it in the
 // ticket's code, and commits; the factory pushes without force and hands the ticket back to
@@ -11,11 +12,13 @@ import { isBulkBranch } from "../../src/bulk.ts";
 import { ciState } from "../../src/checks.ts";
 import { CI_WAIT_MINUTES, waitForCi } from "../../src/ci-wait.ts";
 import { countRunsSince } from "../../src/db/index.ts";
-import { branchSha, commentOnPr, commitChecks, failedChecks } from "../../src/github.ts";
+import { branchSha, commentOnPr, commitChecks, failedChecks, markReady } from "../../src/github.ts";
+import { SKIP_REVIEW_LABEL } from "../../src/labels.ts";
+import { ticketParent } from "../../src/linear.ts";
 import { markForGithub } from "../../src/logic.ts";
 import { finish, plural, prRef, type Outcome, type Prepared, type RunContext, type Stop, type Task } from "../../src/task.ts";
 import type { RunEnd } from "../../src/transitions.ts";
-import { alsoRedOnBase, FIX_ROUNDS, fixRound } from "./gates.ts";
+import { alsoRedOnBase, FIX_ROUNDS, fixRound, skipReviewFrom } from "./gates.ts";
 import { logExcerpt } from "./logs.ts";
 import { FIX, promptVars } from "./prompt.ts";
 
@@ -34,17 +37,33 @@ export const fixCi: Task = {
 };
 
 const stop = (text: string, end: RunEnd = { status: "succeeded", next: "human" }): Stop => ({ stop: { end, text } });
-const toReview = (text: string): Stop => stop(`${text}\n\nHanding to review.`, { status: "succeeded", next: "review" });
 
 async function prepare({ step, runId, ticket, branch, base, heads, openPrs, timeLimitMinutes }: RunContext): Promise<Prepared | Stop> {
+  // Green CI, or none to wait for: on to review, or to merge when the ticket skips review. Merge
+  // refuses a draft, and review is what marks the PRs ready, so a skip marks them ready here.
+  const handOff = async (text: string): Promise<Stop> => {
+    const parentLabels = await step.run("read-parent-labels", async () => (await ticketParent(ticket.id))?.labels ?? []);
+    const from = skipReviewFrom({ bulkParent: isBulkBranch(branch), labels: ticket.labels, parentLabels });
+    if (!from) return stop(`${text}\n\nHanding to review.`, { status: "succeeded", next: "review" });
+    const urls = Object.values(openPrs);
+    await step.run("mark-ready-skipping-review", async () => {
+      for (const url of urls) await markReady(url);
+    });
+    const where = from === "ticket" ? "the ticket" : "its parent";
+    return stop(`${text}\n\n\`${SKIP_REVIEW_LABEL}\` is on ${where}: marked ${urls.map(prRef).join(", ")} ready, and handing to merge without review.`, {
+      status: "succeeded",
+      next: "merge",
+    });
+  };
+
   const repos = Object.keys(openPrs);
   if (repos.length === 0) return stop(`Not checking CI: \`${branch}\` has no open PR.`);
   // CI runs only on PRs into main: a sub-ticket's PR into its bulk branch has none to wait for.
-  if (isBulkBranch(base)) return toReview(`No CI runs on PRs into \`${base}\`.`);
+  if (isBulkBranch(base)) return handOff(`No CI runs on PRs into \`${base}\`.`);
 
   const ci = await waitForCi(step, repos, heads);
   if (ci.state === "green") {
-    return toReview(ci.checks === 0 ? "CI is green: no checks ran on the PRs." : `CI is green on ${repos.map((r) => prRef(openPrs[r]!)).join(", ")}: ${plural(ci.checks, "check")} passed.`);
+    return handOff(ci.checks === 0 ? "CI is green: no checks ran on the PRs." : `CI is green on ${repos.map((r) => prRef(openPrs[r]!)).join(", ")}: ${plural(ci.checks, "check")} passed.`);
   }
   if (ci.state === "pending") return stop(`CI was still running after ${CI_WAIT_MINUTES} minutes: ${ci.pending.join(", ")}.`);
 

@@ -101,7 +101,7 @@ A limit on how often a trigger fires (one bug report in ten, a clock once a day)
 The merge task's gate before any merge: an agent judges whether each of the ticket's PRs is an easy call, then the orchestrator's own checks (CI green, mergeable, not into production, unchanged since judged) must pass too. All of a ticket's PRs merge, or none.
 
 **Bulk branch**:
-A parent ticket's `factory/bulk/<parent>` branch, opted in with `oscar-factory:bulk`. Its sub-tickets' PRs merge into it with no per-PR human review, no agent judgement and no CI; Oscar reviews the batch as one PR into main. It trades per-PR human review for one human review of the batch.
+A parent ticket's `factory/bulk/<parent>` branch, opted in with `oscar-factory:bulk`. Its sub-tickets' PRs merge into it with no per-PR human review, no agent judgement and no CI; Oscar reviews the batch as one PR into main. It trades per-PR human review for one human review of the batch. With `oscar-factory:skip-review` on the parent too, it trades per-PR automated review as well.
 _Avoid_: integration branch, batch branch
 
 **Dry run**:

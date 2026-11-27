@@ -25,7 +25,7 @@ Each with its CI, which has finished and is green, its body, the factory review 
 1. `factory-rules`: the rules for the whole run. The verdict is the run's output: its reasons stand in for the Decisions list.
 2. Read the rubric at `{{runDir}}/rubric.md`. It is what "easy call" means here.
 3. In each repo with a PR, read the whole diff, `git diff origin/{{base}}...HEAD`, and the code around it where a hunk's effect isn't plain from the hunk. Check the diff against the ticket, as Oscar's comments refine it: it does what the ticket asks, and nothing else.
-4. Read the factory review and the threads as evidence, not as the verdict. A finding it left that you judge minor doesn't hold a PR back; say why. A **Decision needed:** finding nobody has answered always does.
+4. Read the factory review and the threads as evidence, not as the verdict. A finding it left that you judge minor doesn't hold a PR back; say why. A **Decision needed:** finding nobody has answered always does. With no factory review, Oscar had the ticket skip it: judge the diff on its own, by the same rubric.
 5. Judge each PR: `merge` or `human-needed`, by the rubric. The ticket's PRs merge together or not at all, so judge them as one change too: a PR that only works with another (an app reading an api field) is judged with it. If you find yourself weighing it up, that weighing is the answer: `human-needed`.
 6. Write the verdict to the verdict path, in exactly this shape:
 

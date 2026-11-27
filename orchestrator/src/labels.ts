@@ -34,7 +34,13 @@ export const QA_DEFECTS_LABEL = `${LABEL_PREFIX}qa-defects`;
  * how the QA verdict finds the releases it may be owed on. A flag, not a task: it queues nothing.
  */
 export const QA_RELEASE_LABEL = `${LABEL_PREFIX}qa-release`;
-export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL, BULK_LABEL, QA_DEFECTS_LABEL, QA_RELEASE_LABEL];
+/**
+ * Set by Oscar on a ticket, or on a parent for every one of its sub-tickets: once CI is green,
+ * fix-ci hands the ticket to merge instead of review. A bulk parent's own PR into main is still
+ * reviewed. A flag, not a task: it queues nothing.
+ */
+export const SKIP_REVIEW_LABEL = `${LABEL_PREFIX}skip-review`;
+export const FLAG_LABELS: readonly string[] = [NO_AUTO_MERGE_LABEL, CANDIDATE_LABEL, BULK_LABEL, QA_DEFECTS_LABEL, QA_RELEASE_LABEL, SKIP_REVIEW_LABEL];
 
 /** The label that queues a run of the task. */
 export function taskLabel(task: TaskName): string {
