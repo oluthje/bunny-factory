@@ -21,7 +21,7 @@ The engine that runs every task is in `src/`, and knows no task by name: the con
 
 Runs start only from a ticket's `oscar-factory:<task>` label, and every run ends by moving the ticket's labels on. A task with a `clock` doesn't change that: on its cron the factory files a ticket with the task's label (`src/functions/clock.ts`), and `pick-up-tickets` starts the run. Each task decides what comes next (its `conclude` sets `next`: a task, `human` to wait on Oscar, or `done`), and `src/transitions.ts` moves the labels, holding back any run that didn't succeed. A task's `prepare` can also end the run before any runner, with a `Stop`.
 
-The chain: `explore` (easy call) → `implement` (pushed commits) → `fix-ci` (CI green) → `review` (posted on a PR) → `merge` (merged: done). While CI is red, `fix-ci` fixes it and hands the ticket back to itself to wait for CI again, up to 3 fixes per `implement` run. When a PR conflicts with its base, or is behind it, `merge` hands it to `resolve`, which merges the base in and hands it straight back to `merge`.
+The chain: `explore` (easy call) → `implement` (pushed commits) → `fix-ci` (CI green) → `review` (posted on a PR) → `merge` (merged: done). While CI is red, `fix-ci` fixes it and hands the ticket back to itself to wait for CI again, up to 3 fixes per `implement` run. When a PR conflicts with its base, or is behind it, `merge` hands it to `resolve`, which merges the base in and hands it straight back to `merge`. Oscar's flag `oscar-factory:skip-review`, on a ticket or on its parent, takes `review` out of the chain: `fix-ci` hands green CI straight to `merge`.
 
 The deepen tasks sit before it: `deepen-scan` (files a ticket per strong candidate) → `deepen-refute` on each (a verdict, then waits on Oscar). Oscar grills through a candidate with `/factory-deepen-grill` and hands its ticket to `implement`, or cancels it.
 
@@ -68,6 +68,8 @@ implement/extract.md          update only, and only with review threads: not cal
 Starts from: the `oscar-factory:fix-ci` label, which an `implement` run that pushed commits sets, a `fix-ci` run that pushed a fix sets again, or Oscar does.
 
 Ends with: CI green and the ticket handed to `review`, or a fix pushed and the ticket back on `fix-ci`. Before any runner, `prepare` waits for CI on every PR as `merge` does (`src/ci-wait.ts`: polls every 2 minutes for up to 28). Green hands the ticket to `oscar-factory:review` with no runner; still running when the wait runs out goes to Oscar. A sub-ticket's PR into its bulk branch has no CI, and goes straight to review.
+
+When Oscar's flag `oscar-factory:skip-review` is on the ticket, or on its parent (which covers every sub-ticket), the ticket goes to `oscar-factory:merge` instead of review, and the factory marks its PRs ready for review first, since merge refuses a draft (gates.ts `skipReviewFrom`). It works on any ticket: into main, merge still waits for CI and has its agent judge the PRs; into a bulk branch, the sub-ticket's PRs merge with only the orchestrator's checks, and Oscar's review of the batch is the only review. A bulk parent's own PR into main is still reviewed: on a parent, the flag is for its sub-tickets.
 
 On red, the agent gets each failed check with its log up to the last error (`logs.ts`; GitHub Actions jobs only, other checks give their summary). It reproduces the failure, checks whether `origin/<base>` fails the same way, fixes it in the ticket's code, and commits. The factory pushes without force, posts the fix on each PR, and hands the ticket back to `oscar-factory:fix-ci`, which waits for CI on the new head. Nothing committed, a timeout, or a failure the base has too waits on Oscar. Before any runner, a check that fails on the base's head as well stops for Oscar (gates.ts `alsoRedOnBase`), and so does red CI once 3 fix runs (`FIX_ROUNDS`) since the last `implement` run haven't made it green.
 
@@ -121,7 +123,7 @@ review/extract.md             not called by the agent: the factory resumes the s
 
 ### `merge`
 
-Starts from: the `oscar-factory:merge` label, which a `review` run that posted on a PR sets, or Oscar does.
+Starts from: the `oscar-factory:merge` label, which a `review` run that posted on a PR sets, a `fix-ci` run that found CI green on a ticket with `oscar-factory:skip-review` sets, or Oscar does.
 
 Ends with: the ticket's PRs merged, all of them or none. Merged, the ticket keeps no factory label (`next: "done"`). A PR that conflicts with its base, or is behind it, sends the ticket to `oscar-factory:resolve`, up to 3 rounds (`RESOLVE_ROUNDS`) since its last `implement` run. Anything else waits on Oscar, with the reason on the ticket and on each PR.
 

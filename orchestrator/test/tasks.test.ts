@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CANDIDATE_LABEL, HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, NO_AUTO_MERGE_LABEL } from "../src/labels.ts";
+import { CANDIDATE_LABEL, HUMAN_NEEDED_LABEL, IN_PROGRESS_LABEL, NO_AUTO_MERGE_LABEL, SKIP_REVIEW_LABEL } from "../src/labels.ts";
 import { promptTemplate, renderTemplate, SETTINGS_FILE, SKILLS_DIR, TASKS_DIR } from "../src/prompt.ts";
 import { skillsFor, taskFromLabels, TASKS, type TaskName } from "../src/tasks.ts";
 import { ticket } from "./fixtures.ts";
@@ -41,6 +41,12 @@ describe("taskFromLabels", () => {
     expect(NO_AUTO_MERGE_LABEL).toBe("oscar-factory:no-auto-merge");
     expect(taskFromLabels(["oscar-factory:review", NO_AUTO_MERGE_LABEL])).toEqual({ ok: true, task: "review" });
     expect(taskFromLabels([NO_AUTO_MERGE_LABEL])).toEqual({ ok: false, reason: null });
+  });
+
+  it("ignores the skip-review flag, which reads like the review task's label but isn't one", () => {
+    expect(SKIP_REVIEW_LABEL).toBe("oscar-factory:skip-review");
+    expect(taskFromLabels(["oscar-factory:implement", SKIP_REVIEW_LABEL])).toEqual({ ok: true, task: "implement" });
+    expect(taskFromLabels([SKIP_REVIEW_LABEL])).toEqual({ ok: false, reason: null });
   });
 
   it("ignores the candidate flag, which the factory leaves on a candidate's ticket for good", () => {
